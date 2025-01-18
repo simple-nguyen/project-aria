@@ -155,13 +155,13 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = React.useState<Socket | null>(null);
   const pendingSubscriptions = useRef<Set<string>>(new Set());
 
-  // Memoize market data
-  const marketData = useMemo(() => ({
+  // No point memoizing - changes too frequently at this level
+  const marketData = {
     tickers: state.tickers,
     trades: state.trades,
     orderBooks: state.orderBooks,
     decimalPrecision: state.decimalPrecision,
-  }), [state.tickers, state.trades, state.orderBooks, state.decimalPrecision]);
+  };
 
   // Memoize error state
   const errorState = useMemo(() => ({
@@ -227,12 +227,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       reconnectionDelayMax: 5000,
     });
 
-    newSocket.on('connect', () => {
+    newSocket.on('connect', async () => {
       console.log('Connected to WebSocket server');
       dispatch({ type: 'SET_CONNECTED', payload: true });
-      
+    
       // Resubscribe to pending subscriptions
       if (pendingSubscriptions.current.size > 0) {
+        // Give us some time to connect to the backend properly before subscribing
+        await(new Promise((res) => {
+          setTimeout(res, 2000);
+        }))
         console.log('Resubscribing to pending symbols:', Array.from(pendingSubscriptions.current));
         pendingSubscriptions.current.forEach(symbol => {
           newSocket.emit('subscribe', symbol);
@@ -261,12 +265,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   }, [handleMessage]);
 
   return (
-    <MarketDataContext.Provider value={marketData}>
-      <MarketErrorContext.Provider value={errorState}>
-        <MarketActionsContext.Provider value={marketActions}>
+    <MarketErrorContext.Provider value={errorState}>
+      <MarketActionsContext.Provider value={marketActions}>
+        <MarketDataContext.Provider value={marketData}>
           {children}
-        </MarketActionsContext.Provider>
-      </MarketErrorContext.Provider>
-    </MarketDataContext.Provider>
+        </MarketDataContext.Provider>
+      </MarketActionsContext.Provider>
+    </MarketErrorContext.Provider>
   );
 }
