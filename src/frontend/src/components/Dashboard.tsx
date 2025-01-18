@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useMarket } from '../context/MarketContext';
-import { MarketTicker } from '@project-aria/shared';
+import TickerCard from './TickerCard';
+import OrderBookChart from './OrderBookChart';
+import TradeHistory from './TradeHistory';
 
 export default function Dashboard() {
   const { state, subscribe, unsubscribe } = useMarket();
@@ -12,10 +14,6 @@ export default function Dashboard() {
       subscribe(newSymbol);
       setNewSymbol('');
     }
-  };
-
-  const handleUnsubscribe = (symbol: string) => {
-    unsubscribe(symbol);
   };
 
   return (
@@ -46,71 +44,36 @@ export default function Dashboard() {
         </div>
       </form>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-6">
         {Array.from(state.subscribedSymbols).map((symbol) => {
-          const data: MarketTicker | undefined = state.marketData[symbol];
+          const ticker = state.tickers[symbol];
+          const orderBook = state.orderBooks[symbol];
+          const trades = state.trades[symbol] || [];
+
           return (
-            <div key={symbol} className="bg-white p-4 rounded-lg shadow">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">{symbol}</h2>
-                <button
-                  onClick={() => handleUnsubscribe(symbol)}
-                  className="text-red-500 hover:text-red-600"
-                >
-                  Unsubscribe
-                </button>
-              </div>
-              
-              {data ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-gray-600">Last Price</p>
-                      <p className="font-semibold">{data.lastPrice}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">24h Change</p>
-                      <p className={`font-semibold ${
-                        parseFloat(data.priceChangePercent) >= 0 
-                          ? 'text-green-600' 
-                          : 'text-red-600'
-                      }`}>
-                        {data.priceChangePercent}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">24h High</p>
-                      <p className="font-semibold">{data.highPrice}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">24h Low</p>
-                      <p className="font-semibold">{data.lowPrice}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Volume</p>
-                      <p className="font-semibold">{data.volume}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Quote Volume</p>
-                      <p className="font-semibold">{data.quoteVolume}</p>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-gray-600">Bid</p>
-                        <p className="font-semibold">{data.bidPrice}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Ask</p>
-                        <p className="font-semibold">{data.askPrice}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500">Loading data...</p>
+            <div key={symbol} className="space-y-4">
+              {ticker && (
+                <TickerCard 
+                  data={ticker} 
+                  onUnsubscribe={unsubscribe} 
+                />
               )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {orderBook && ticker && (
+                  <div className="md:col-span-2">
+                    <OrderBookChart 
+                      data={orderBook} 
+                      ticker={ticker}
+                    />
+                  </div>
+                )}
+                {trades.length > 0 && (
+                  <div className="md:col-span-2">
+                    <TradeHistory trades={trades} />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
