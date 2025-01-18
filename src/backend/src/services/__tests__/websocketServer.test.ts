@@ -178,7 +178,8 @@ describe('WebSocketServer', () => {
                 price: '50000',
                 quantity: '1',
                 timestamp: 123456789,
-                tradeId: 12345,
+                isBuyerMaker: false,
+                tradeId: 1
             };
 
             binanceHandlers.trade(mockTrade);
@@ -193,15 +194,15 @@ describe('WebSocketServer', () => {
         it('should broadcast depth data', () => {
             const mockOrderBook: OrderBook = {
                 symbol: 'BTCUSDT',
-                bids: [['50000', '1']],
-                asks: [['50001', '2']]
+                bids: [[50000, 1, 2]],
+                asks: [[50001, 2, 3]]
             };
 
             binanceHandlers.depth(mockOrderBook);
 
             expect(mockServer.to).toHaveBeenCalledWith('BTCUSDT');
             expect(mockServer.emit).toHaveBeenCalledWith('market_data', {
-                type: 'depth20@100ms',
+                type: 'depth20',
                 data: mockOrderBook
             });
         });
@@ -209,6 +210,7 @@ describe('WebSocketServer', () => {
         it('should broadcast ticker data', () => {
             const mockTicker: MarketTicker = {
                 symbol: 'BTCUSDT',
+                priceChange: '2',
                 priceChangePercent: '2',
                 lastPrice: '51000',
                 openPrice: '49000',
@@ -237,7 +239,8 @@ describe('WebSocketServer', () => {
                 price: '50000',
                 quantity: '1',
                 timestamp: 123456789,
-                tradeId: 12345,
+                isBuyerMaker: false,
+                tradeId: 1
             };
 
             binanceHandlers.trade(mockTrade);

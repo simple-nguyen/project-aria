@@ -31,26 +31,6 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// Get available trading pairs
-app.get('/api/symbols', async (req, res) => {
-    try {
-        // For now, we'll return a static list of popular trading pairs
-        // In a production environment, you might want to fetch this from Binance's API
-        const symbols = [
-            'BTCUSDT',
-            'ETHUSDT',
-            'BNBUSDT',
-            'ADAUSDT',
-            'DOGEUSDT',
-            'XRPUSDT'
-        ];
-        res.json(symbols);
-    } catch (error) {
-        console.error('Error fetching symbols:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
 // Initialize WebSocket server
 const wsServer = createWebSocketServer(Number(wsPort));
 wsServer.start();

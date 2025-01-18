@@ -60,7 +60,7 @@ export class WebSocketServer {
         });
 
         this.binanceService.on('depth', (orderBook: OrderBook) => {
-            this.broadcastMessage('depth20@100ms', orderBook);
+            this.broadcastMessage('depth20', orderBook);
         });
 
         this.binanceService.on('ticker', (ticker: MarketTicker) => {

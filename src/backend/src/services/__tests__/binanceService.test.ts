@@ -79,7 +79,7 @@ describe('BinanceService', () => {
                 expect.stringContaining('"method":"SUBSCRIBE"')
             );
             expect(mockWs.send).toHaveBeenCalledWith(
-                expect.stringContaining('"params":["btcusdt@trade","btcusdt@depth20@100ms","btcusdt@ticker"]')
+                expect.stringContaining(`"params":[${streams.map(stream => `"btcusdt@${stream}"`).join(',')}]`)
             );
         });
 
@@ -122,11 +122,16 @@ describe('BinanceService', () => {
 
         it('should handle depth messages', () => {
             const mockMessage = {
-                stream: 'btcusdt@depth20@100ms',
+                stream: 'btcusdt@depth20',
                 data: {
-                    symbol: 'BTCUSDT',
-                    bids: [['50000', '1']],
-                    asks: [['50100', '2']]
+                    bids: [
+                        ['50000', '1'],
+                        ['49900', '2']
+                    ],
+                    asks: [
+                        ['50100', '1.5'],
+                        ['50200', '2.5']
+                    ]
                 }
             };
 
@@ -134,8 +139,14 @@ describe('BinanceService', () => {
 
             expect(mockEmit).toHaveBeenCalledWith('depth', {
                 symbol: 'BTCUSDT',
-                bids: [['50000', '1']],
-                asks: [['50100', '2']]
+                bids: [
+                    [50000, 1, 1],
+                    [49900, 2, 3]
+                ],
+                asks: [
+                    [50100, 1.5, 1.5],
+                    [50200, 2.5, 4]
+                ]
             });
         });
 

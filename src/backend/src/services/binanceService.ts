@@ -4,6 +4,7 @@ import { MarketTrade, OrderBook, MarketTicker, StreamType } from '@project-aria/
 import { AppError, ErrorCodes } from '../utils/errors';
 import logger from '../utils/logger';
 import { streams } from '../utils/stream';
+import { parseDepthFloats, sortDepthAsc, sortDepthDesc, reduceDepthWithTotal } from '../utils/helper';
 
 const BINANCE_WS_URL = 'wss://stream.binance.com:9443/stream';
 
@@ -14,11 +15,6 @@ export class BinanceService extends EventEmitter {
     private reconnectAttempts = 0;
     private readonly maxReconnectAttempts = 5;
     private readonly reconnectDelay = 1000;
-    private lastPongTime: number = Date.now();
-    private readonly PING_INTERVAL = 3 * 60 * 1000; // 3 minutes
-    private readonly PONG_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-    private pingInterval: NodeJS.Timeout | null = null;
-    private pongCheckInterval: NodeJS.Timeout | null = null;
 
     public connect(): void {
         try {
@@ -53,10 +49,6 @@ export class BinanceService extends EventEmitter {
                 }
             });
 
-            this.ws.on('pong', () => {
-                this.lastPongTime = Date.now();
-            });
-
         } catch (error) {
             logger.error('Error connecting to Binance WebSocket', {
                 error: error instanceof Error ? error.message : 'Unknown error'
@@ -69,16 +61,7 @@ export class BinanceService extends EventEmitter {
         }
     }
 
-    private cleanup(): void {
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-            this.pingInterval = null;
-        }
-        if (this.pongCheckInterval) {
-            clearInterval(this.pongCheckInterval);
-            this.pongCheckInterval = null;
-        }
-    }
+    private cleanup(): void {}
 
     public disconnect(): void {
         this.cleanup();
@@ -112,7 +95,6 @@ export class BinanceService extends EventEmitter {
         }
 
         try {
-
             const subscriptions = streams.map(stream => `${symbol.toLowerCase()}@${stream}`);
             const message = {
                 method: 'SUBSCRIBE',
@@ -190,7 +172,6 @@ export class BinanceService extends EventEmitter {
                     this.handleTradeMessage(eventData);
                     break;
                 case 'depth20':
-                case 'depth20@100ms':
                     this.handleDepthMessage({
                         symbol: symbol.toUpperCase(),
                         bids: eventData.bids,
@@ -236,6 +217,7 @@ export class BinanceService extends EventEmitter {
             quantity: message.q,
             timestamp: message.T,
             tradeId: message.t,
+            isBuyerMaker: message.m
         };
         this.emit('trade', trade);
     }
@@ -244,11 +226,16 @@ export class BinanceService extends EventEmitter {
         if (!message.symbol || !Array.isArray(message.bids) || !Array.isArray(message.asks)) {
             throw new Error('Missing required fields in depth message');
         }
-
         const orderBook: OrderBook = {
             symbol: message.symbol,
-            bids: message.bids,
+            bids: message.bids
+            .map(parseDepthFloats)
+            .sort(sortDepthDesc)
+            .reduce(reduceDepthWithTotal, []),
             asks: message.asks
+            .map(parseDepthFloats)
+            .sort(sortDepthAsc)
+            .reduce(reduceDepthWithTotal, [])
         };
         this.emit('depth', orderBook);
     }
@@ -261,6 +248,7 @@ export class BinanceService extends EventEmitter {
         const ticker: MarketTicker = {
             symbol: message.s,
             lastPrice: message.c,
+            priceChange: message.p,
             priceChangePercent: message.P,
             openPrice: message.o,
             highPrice: message.h,

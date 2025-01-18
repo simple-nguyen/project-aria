@@ -5,17 +5,19 @@ export interface MarketTrade {
     price: string;
     quantity: string;
     timestamp: number;
+    isBuyerMaker: boolean;
     tradeId: number;
 }
 
 export interface OrderBook {
     symbol: string;
-    bids: [string, string][];
-    asks: [string, string][];
+    bids: [number, number, number][];
+    asks: [number, number, number][];
 }
 
 export interface MarketTicker {
     symbol: string;
+    priceChange: string;
     priceChangePercent: string;
     openPrice: string;
     lastPrice: string;
