@@ -155,7 +155,7 @@ export class BinanceService extends EventEmitter {
 
     private handleMessage(message: any): void {
         let parsedMessage: any;
-        
+    
         try {
             if (typeof message === 'string') {
                 parsedMessage = JSON.parse(message);
@@ -174,7 +174,8 @@ export class BinanceService extends EventEmitter {
             } else if (parsedMessage.e === '24hrTicker') {
                 this.handleTickerMessage(parsedMessage);
             } else {
-                throw new Error('Unknown message type');
+                // Ignore other message types
+                logger.debug('Ignoring message type', { type: parsedMessage.e });
             }
         } catch (error) {
             if (error instanceof SyntaxError) {
@@ -185,6 +186,7 @@ export class BinanceService extends EventEmitter {
                     500
                 ));
             } else {
+                console.log('message', message);
                 logger.warn('Invalid market data received:', { error, message: parsedMessage || message });
                 this.emit('error', new AppError(
                     'Invalid market data received',
@@ -196,7 +198,7 @@ export class BinanceService extends EventEmitter {
     }
 
     private handleTradeMessage(message: any): void {
-        if (!message.s || !message.p || !message.q || !message.T || !message.b || !message.a || !message.t) {
+        if (!message.s || !message.p || !message.q || !message.T || !message.t) {
             throw new Error('Missing required fields in trade message');
         }
 
@@ -205,22 +207,18 @@ export class BinanceService extends EventEmitter {
             price: message.p,
             quantity: message.q,
             timestamp: message.T,
-            buyerOrderId: message.b,
-            sellerOrderId: message.a,
             tradeId: message.t,
-            isBuyerMaker: message.m
         };
         this.emit('trade', trade);
     }
 
     private handleDepthMessage(message: any): void {
-        if (!message.s || !message.T || !message.U || !message.u || !Array.isArray(message.b) || !Array.isArray(message.a)) {
+        if (!message.s || !message.U || !message.u || !Array.isArray(message.b) || !Array.isArray(message.a)) {
             throw new Error('Missing required fields in depth message');
         }
 
         const orderBook: OrderBook = {
             symbol: message.s,
-            timestamp: message.T,
             firstUpdateId: message.U,
             finalUpdateId: message.u,
             bids: message.b,

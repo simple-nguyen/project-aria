@@ -5,17 +5,13 @@ export interface MarketTrade {
     price: string;
     quantity: string;
     timestamp: number;
-    buyerOrderId: string;
-    sellerOrderId: string;
     tradeId: number;
-    isBuyerMaker: boolean;
 }
 
 export interface OrderBook {
     symbol: string;
     bids: [string, string][];
     asks: [string, string][];
-    timestamp: number;
     firstUpdateId: number;
     finalUpdateId: number;
 }
