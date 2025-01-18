@@ -4,6 +4,7 @@ import { createBinanceService, BinanceService } from './binanceService';
 import { MarketTrade, OrderBook, MarketTicker, StreamType, WebSocketMessage } from '@project-aria/shared';
 import logger from '../utils/logger';
 import { AppError, ErrorCodes } from '../utils/errors';
+import { streams } from '../utils/stream';
 
 export class WebSocketServer {
     private io: Server;
@@ -59,7 +60,7 @@ export class WebSocketServer {
         });
 
         this.binanceService.on('depth', (orderBook: OrderBook) => {
-            this.broadcastMessage('depth', orderBook);
+            this.broadcastMessage('depth20@100ms', orderBook);
         });
 
         this.binanceService.on('ticker', (ticker: MarketTicker) => {
@@ -132,7 +133,7 @@ export class WebSocketServer {
             }
 
             if (!this.activeSymbols.has(symbol)) {
-                await this.binanceService.subscribe(symbol, ['trade', 'depth', 'ticker']);
+                await this.binanceService.subscribe(symbol, streams);
                 this.activeSymbols.add(symbol);
                 logger.info('New symbol subscription', { symbol });
             }
@@ -170,7 +171,7 @@ export class WebSocketServer {
             // Check if there are any clients still subscribed to this symbol
             const room = this.io.sockets.adapter.rooms.get(symbol);
             if (!room || room.size === 0) {
-                this.binanceService.unsubscribe(symbol);
+                this.binanceService.unsubscribe(symbol, streams);
                 this.activeSymbols.delete(symbol);
                 logger.info('Removed symbol subscription', { symbol });
             }
@@ -201,7 +202,7 @@ export class WebSocketServer {
             for (const symbol of this.activeSymbols) {
                 const room = this.io.sockets.adapter.rooms.get(symbol);
                 if (!room || room.size === 0) {
-                    this.binanceService.unsubscribe(symbol);
+                    this.binanceService.unsubscribe(symbol, streams);
                     this.activeSymbols.delete(symbol);
                     logger.info('Cleaned up subscription', { symbol });
                 }

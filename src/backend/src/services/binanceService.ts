@@ -3,23 +3,26 @@ import { EventEmitter } from 'events';
 import { MarketTrade, OrderBook, MarketTicker, StreamType } from '@project-aria/shared';
 import { AppError, ErrorCodes } from '../utils/errors';
 import logger from '../utils/logger';
+import { streams } from '../utils/stream';
+
+const BINANCE_WS_URL = 'wss://stream.binance.com:9443/stream';
 
 export class BinanceService extends EventEmitter {
     private ws: WebSocket | null = null;
     private activeSymbols: Set<string> = new Set();
-    private readonly wsUrl = 'wss://stream.binance.com:9443/ws';
-    private reconnectAttempts: number = 0;
-    private readonly maxReconnectAttempts: number = 5;
-    private readonly reconnectDelay: number = 5000;
-    private reconnectTimer: NodeJS.Timeout | null = null;
-
-    constructor() {
-        super();
-    }
+    private subscriptionId = 1;
+    private reconnectAttempts = 0;
+    private readonly maxReconnectAttempts = 5;
+    private readonly reconnectDelay = 1000;
+    private lastPongTime: number = Date.now();
+    private readonly PING_INTERVAL = 3 * 60 * 1000; // 3 minutes
+    private readonly PONG_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+    private pingInterval: NodeJS.Timeout | null = null;
+    private pongCheckInterval: NodeJS.Timeout | null = null;
 
     public connect(): void {
         try {
-            this.ws = new WebSocket(this.wsUrl);
+            this.ws = new WebSocket(BINANCE_WS_URL);
 
             this.ws.on('open', () => {
                 logger.info('Connected to Binance WebSocket');
@@ -27,171 +30,196 @@ export class BinanceService extends EventEmitter {
                 this.resubscribe();
             });
 
-            this.ws.on('message', (data: WebSocket.Data) => {
-                try {
-                    this.handleMessage(data.toString());
-                } catch (error) {
-                    logger.error('Error parsing WebSocket message:', { error });
-                    this.emit('error', new AppError(
-                        'Failed to parse market data',
-                        ErrorCodes.INVALID_MARKET_DATA,
-                        500
-                    ));
-                }
+            this.ws.on('message', this.handleMessage.bind(this));
+
+            this.ws.on('close', (code: number, reason: string) => {
+                logger.warn('Binance WebSocket connection closed', { code, reason });
+                this.cleanup();
+                this.reconnect();
             });
 
             this.ws.on('error', (error: Error) => {
-                logger.error('WebSocket error:', { error });
-                const appError = new AppError(
+                logger.error('Binance WebSocket error', { error: error.message });
+                this.emit('error', new AppError(
                     'WebSocket connection error',
                     ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
                     500
-                );
-                this.emit('error', appError);
-                // Close the connection to trigger reconnect
-                if (this.ws) {
-                    this.ws.close();
+                ));
+            });
+
+            this.ws.on('ping', (data: Buffer) => {
+                if (this.ws?.readyState === WebSocket.OPEN) {
+                    this.ws.pong(data);
                 }
             });
 
-            this.ws.on('close', () => {
-                logger.warn('WebSocket connection closed');
-
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    this.reconnectAttempts++;
-                    logger.info(`Attempting to reconnect`, {
-                        attempt: this.reconnectAttempts,
-                        maxAttempts: this.maxReconnectAttempts
-                    });
-                    if (this.reconnectTimer) {
-                        clearTimeout(this.reconnectTimer);
-                    }
-                    this.reconnectTimer = setTimeout(() => {
-                        this.connect();
-                        this.reconnectTimer = null;
-                    }, this.reconnectDelay);
-                } else {
-                    const error = new AppError(
-                        'Max reconnection attempts reached',
-                        ErrorCodes.MAX_RECONNECTION_ATTEMPTS,
-                        500
-                    );
-                    logger.error(error.message);
-                }
+            this.ws.on('pong', () => {
+                this.lastPongTime = Date.now();
             });
+
         } catch (error) {
-            logger.error('Failed to connect to Binance WebSocket:', { error });
+            logger.error('Error connecting to Binance WebSocket', {
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
             throw new AppError(
-                'Failed to connect to Binance WebSocket',
-                ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
-                500,
-            );
-        }
-    }
-
-    public async subscribe(symbol: string, streams: StreamType[]): Promise<void> {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            throw new AppError(
-                'WebSocket is not connected',
+                'Failed to connect to market data service',
                 ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
                 500
             );
         }
+    }
+
+    private cleanup(): void {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        if (this.pongCheckInterval) {
+            clearInterval(this.pongCheckInterval);
+            this.pongCheckInterval = null;
+        }
+    }
+
+    public disconnect(): void {
+        this.cleanup();
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+    }
+
+    private reconnect(): void {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            logger.error('Max reconnection attempts reached');
+            this.emit('error', new AppError(
+                'Failed to reconnect to market data service',
+                ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
+                500
+            ));
+            return;
+        }
+
+        this.reconnectAttempts++;
+        setTimeout(() => {
+            logger.info('Attempting to reconnect', { attempt: this.reconnectAttempts });
+            this.connect();
+        }, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
+    }
+
+    public async subscribe(symbol: string, streams: StreamType[]): Promise<void> {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new AppError('WebSocket not connected', ErrorCodes.WEBSOCKET_CONNECTION_CLOSED, 500);
+        }
+
         try {
+
             const subscriptions = streams.map(stream => `${symbol.toLowerCase()}@${stream}`);
             const message = {
                 method: 'SUBSCRIBE',
                 params: subscriptions,
-                id: Date.now()
+                id: this.subscriptionId++
             };
 
             this.ws.send(JSON.stringify(message));
-            this.activeSymbols.add(symbol.toLowerCase());
-            logger.info('Subscribed to market data', { symbol, streams });
+            this.activeSymbols.add(symbol);
+
+            logger.info('Subscribed to symbol', { symbol, streams });
         } catch (error) {
-            logger.error('Failed to subscribe to market data:', { error, symbol });
+            logger.error('Error subscribing to symbol', {
+                symbol,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
             throw new AppError(
                 'Failed to subscribe to market data',
                 ErrorCodes.WEBSOCKET_SUBSCRIPTION_FAILED,
-                500,
+                500
             );
         }
     }
 
-    public unsubscribe(symbol: string): void {
+    public unsubscribe(symbol: string, streams: StreamType[]): void {
         try {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                 return;
             }
 
-            const streams = ['trade', 'depth', 'ticker'];
             const subscriptions = streams.map(stream => `${symbol.toLowerCase()}@${stream}`);
             const message = {
                 method: 'UNSUBSCRIBE',
                 params: subscriptions,
-                id: Date.now()
+                id: this.subscriptionId++
             };
 
             this.ws.send(JSON.stringify(message));
-            this.activeSymbols.delete(symbol.toLowerCase());
-            logger.info('Unsubscribed from market data', { symbol });
+            this.activeSymbols.delete(symbol);
+
+            logger.info('Unsubscribed from symbol', { symbol, streams });
         } catch (error) {
-            logger.error('Failed to unsubscribe from market data:', { error, symbol });
+            logger.error('Error unsubscribing from symbol', {
+                symbol,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
         }
     }
 
-    public disconnect(): void {
-        logger.info('Disconnecting from Binance WebSocket');
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-            this.activeSymbols.clear();
-        }
-    }
-
-    private handleMessage(message: any): void {
-        let parsedMessage: any;
-    
+    private handleMessage(data: WebSocket.Data): void {
+        let parsedData: any;
+        
         try {
-            if (typeof message === 'string') {
-                parsedMessage = JSON.parse(message);
+            if (typeof data === 'string') {
+                parsedData = JSON.parse(data);
+            } else if (data instanceof Buffer) {
+                parsedData = JSON.parse(data.toString());
             } else {
-                parsedMessage = message;
+                throw new Error('Unsupported message format');
             }
 
-            if (!parsedMessage || typeof parsedMessage !== 'object') {
+            if (parsedData.result !== undefined) {
+                return;
+            }
+
+            if (!parsedData.stream || !parsedData.data) {
                 throw new Error('Invalid message format');
             }
 
-            if (parsedMessage.e === 'trade') {
-                this.handleTradeMessage(parsedMessage);
-            } else if (parsedMessage.e === 'depthUpdate') {
-                this.handleDepthMessage(parsedMessage);
-            } else if (parsedMessage.e === '24hrTicker') {
-                this.handleTickerMessage(parsedMessage);
-            } else {
-                // Ignore other message types
-                logger.debug('Ignoring message type', { type: parsedMessage.e });
+            const [symbol, eventType] = parsedData.stream.split('@');
+            const eventData = parsedData.data;
+
+            switch (eventType) {
+                case 'trade':
+                    this.handleTradeMessage(eventData);
+                    break;
+                case 'depth20':
+                case 'depth20@100ms':
+                    this.handleDepthMessage({
+                        symbol: symbol.toUpperCase(),
+                        bids: eventData.bids,
+                        asks: eventData.asks
+                    });
+                    break;
+                case 'ticker':
+                    this.handleTickerMessage(eventData);
+                    break;
+                default:
+                    logger.debug('Ignoring message type', { type: eventType });
             }
         } catch (error) {
             if (error instanceof SyntaxError) {
-                logger.error('Error parsing WebSocket message:', { error });
+                logger.error('Invalid JSON received:', { data });
                 this.emit('error', new AppError(
-                    'Failed to parse market data',
+                    'Invalid market data received',
                     ErrorCodes.INVALID_MARKET_DATA,
                     500
                 ));
             } else {
-                console.log('message', message);
-                logger.warn('Invalid market data received:', { error, message: parsedMessage || message });
+                logger.warn('Invalid market data received:', { 
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    data: parsedData || data 
+                });
                 this.emit('error', new AppError(
                     'Invalid market data received',
                     ErrorCodes.INVALID_MARKET_DATA,
-                    400
+                    500
                 ));
             }
         }
@@ -213,62 +241,49 @@ export class BinanceService extends EventEmitter {
     }
 
     private handleDepthMessage(message: any): void {
-        if (!message.s || !message.U || !message.u || !Array.isArray(message.b) || !Array.isArray(message.a)) {
+        if (!message.symbol || !Array.isArray(message.bids) || !Array.isArray(message.asks)) {
             throw new Error('Missing required fields in depth message');
         }
 
         const orderBook: OrderBook = {
-            symbol: message.s,
-            firstUpdateId: message.U,
-            finalUpdateId: message.u,
-            bids: message.b,
-            asks: message.a
+            symbol: message.symbol,
+            bids: message.bids,
+            asks: message.asks
         };
         this.emit('depth', orderBook);
     }
 
     private handleTickerMessage(message: any): void {
-        if (!message.s || !message.p || !message.P || !message.w || !message.c || !message.Q || !message.b || !message.a || 
-            !message.o || !message.h || !message.l || !message.v || !message.q || !message.O || !message.C || !message.F || !message.L || !message.n) {
+        if (!message.s || !message.c || !message.P || !message.o || !message.h || !message.l || !message.v || !message.q) {
             throw new Error('Missing required fields in ticker message');
         }
 
         const ticker: MarketTicker = {
             symbol: message.s,
-            priceChange: message.p,
-            priceChangePercent: message.P,
-            weightedAvgPrice: message.w,
             lastPrice: message.c,
-            lastQty: message.Q,
-            bidPrice: message.b,
-            askPrice: message.a,
+            priceChangePercent: message.P,
             openPrice: message.o,
             highPrice: message.h,
             lowPrice: message.l,
             volume: message.v,
-            quoteVolume: message.q,
-            openTime: message.O,
-            closeTime: message.C,
-            firstId: message.F,
-            lastId: message.L,
-            count: message.n
+            quoteVolume: message.q
         };
         this.emit('ticker', ticker);
     }
 
     private resubscribe(): void {
         for (const symbol of this.activeSymbols) {
-            this.subscribe(symbol, ['trade', 'depth', 'ticker'])
+            this.subscribe(symbol, streams)
                 .catch(error => {
                     logger.error('Error resubscribing to symbol', {
                         symbol,
-                        error: error.message
+                        error: error instanceof Error ? error.message : 'Unknown error'
                     });
                 });
         }
     }
 }
 
-export const createBinanceService = (): BinanceService => {
+export function createBinanceService(): BinanceService {
     return new BinanceService();
-};
+}

@@ -1,4 +1,4 @@
-export type StreamType = 'trade' | 'depth' | 'ticker';
+export type StreamType = 'trade' | 'depth20@100ms' | 'depth20' | 'ticker';
 
 export interface MarketTrade {
     symbol: string;
@@ -12,29 +12,17 @@ export interface OrderBook {
     symbol: string;
     bids: [string, string][];
     asks: [string, string][];
-    firstUpdateId: number;
-    finalUpdateId: number;
 }
 
 export interface MarketTicker {
     symbol: string;
-    priceChange: string;
     priceChangePercent: string;
-    weightedAvgPrice: string;
-    lastPrice: string;
-    lastQty: string;
-    bidPrice: string;
-    askPrice: string;
     openPrice: string;
+    lastPrice: string;
     highPrice: string;
     lowPrice: string;
     volume: string;
     quoteVolume: string;
-    openTime: number;
-    closeTime: number;
-    firstId: number;
-    lastId: number;
-    count: number;
 }
 
 export interface WebSocketMessage {

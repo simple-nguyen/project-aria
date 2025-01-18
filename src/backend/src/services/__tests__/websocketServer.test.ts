@@ -5,6 +5,7 @@ import { BinanceService, createBinanceService } from '../binanceService';
 import { MarketTrade, OrderBook, MarketTicker } from '@project-aria/shared';
 import logger from '../../utils/logger';
 import { AppError, ErrorCodes } from '../../utils/errors';
+import { streams } from '../../utils/stream';
 
 // Mock dependencies
 jest.mock('socket.io');
@@ -127,7 +128,7 @@ describe('WebSocketServer', () => {
         it('should handle client subscriptions', async () => {
             await socketHandlers.subscribe('BTCUSDT');
 
-            expect(mockBinanceService.subscribe).toHaveBeenCalledWith('BTCUSDT', ['trade', 'depth', 'ticker']);
+            expect(mockBinanceService.subscribe).toHaveBeenCalledWith('BTCUSDT', streams);
             expect(mockSocket.join).toHaveBeenCalledWith('BTCUSDT');
             expect(logger.info).toHaveBeenCalledWith('Client subscribed to symbol', {
                 clientId: 'test-client',
@@ -152,7 +153,7 @@ describe('WebSocketServer', () => {
             socketHandlers.unsubscribe('BTCUSDT');
 
             expect(mockSocket.leave).toHaveBeenCalledWith('BTCUSDT');
-            expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith('BTCUSDT');
+            expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith('BTCUSDT', streams);
             expect(logger.info).toHaveBeenCalledWith('Client unsubscribed from symbol', {
                 clientId: 'test-client',
                 symbol: 'BTCUSDT'
@@ -177,10 +178,7 @@ describe('WebSocketServer', () => {
                 price: '50000',
                 quantity: '1',
                 timestamp: 123456789,
-                buyerOrderId: 'buyer',
-                sellerOrderId: 'seller',
                 tradeId: 12345,
-                isBuyerMaker: true
             };
 
             binanceHandlers.trade(mockTrade);
@@ -195,9 +193,6 @@ describe('WebSocketServer', () => {
         it('should broadcast depth data', () => {
             const mockOrderBook: OrderBook = {
                 symbol: 'BTCUSDT',
-                timestamp: 123456789,
-                firstUpdateId: 100,
-                finalUpdateId: 200,
                 bids: [['50000', '1']],
                 asks: [['50001', '2']]
             };
@@ -206,7 +201,7 @@ describe('WebSocketServer', () => {
 
             expect(mockServer.to).toHaveBeenCalledWith('BTCUSDT');
             expect(mockServer.emit).toHaveBeenCalledWith('market_data', {
-                type: 'depth',
+                type: 'depth20@100ms',
                 data: mockOrderBook
             });
         });
@@ -214,23 +209,13 @@ describe('WebSocketServer', () => {
         it('should broadcast ticker data', () => {
             const mockTicker: MarketTicker = {
                 symbol: 'BTCUSDT',
-                priceChange: '1000',
                 priceChangePercent: '2',
-                weightedAvgPrice: '50000',
                 lastPrice: '51000',
-                lastQty: '1',
-                bidPrice: '50999',
-                askPrice: '51001',
                 openPrice: '49000',
                 highPrice: '52000',
                 lowPrice: '48000',
                 volume: '100',
                 quoteVolume: '5000000',
-                openTime: 123456789,
-                closeTime: 123556789,
-                firstId: 1000,
-                lastId: 2000,
-                count: 1000
             };
 
             binanceHandlers.ticker(mockTicker);
@@ -252,10 +237,7 @@ describe('WebSocketServer', () => {
                 price: '50000',
                 quantity: '1',
                 timestamp: 123456789,
-                buyerOrderId: 'buyer',
-                sellerOrderId: 'seller',
                 tradeId: 12345,
-                isBuyerMaker: true
             };
 
             binanceHandlers.trade(mockTrade);
