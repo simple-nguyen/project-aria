@@ -12,7 +12,10 @@ export default function Dashboard() {
     setActiveSymbol(symbol);
   }, []);
 
-  console.log('[DASHBOARD] Initialised');
+  console.log('[DASHBOARD] Initialised', {
+    error,
+    isConnected,
+  });
 
   return (
     <div className="min-h-screen bg-secondary">

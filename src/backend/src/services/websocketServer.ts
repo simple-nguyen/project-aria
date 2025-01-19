@@ -1,220 +1,164 @@
-import { Server, Socket } from 'socket.io';
-import { createServer } from 'http';
-import { createBinanceService, BinanceService } from './binanceService';
-import { MarketTrade, OrderBook, MarketTicker, StreamType, WebSocketMessage } from '@project-aria/shared';
+import { Server } from 'http';
+import { WebSocket, WebSocketServer as WSServer } from 'ws';
+import { MarketTicker, MarketTrade, OrderBook, WebSocketMessage } from '@project-aria/shared';
+import { BinanceService } from './binanceService';
 import logger from '../utils/logger';
 import { AppError, ErrorCodes } from '../utils/errors';
 import { streams } from '../utils/stream';
 
 export class WebSocketServer {
-    private io: Server;
-    private binanceService: BinanceService;
-    private activeSymbols: Set<string>;
-    private httpServer: ReturnType<typeof createServer>;
+  private wss: WSServer;
+  private subscriptions: Map<string, Set<WebSocket>> = new Map();
+  private clientSubscriptions: Map<WebSocket, Set<string>> = new Map();
+  private binanceService: BinanceService;
 
-    constructor(private readonly port: number) {
-        this.httpServer = createServer();
-        this.io = new Server(this.httpServer, {
-            cors: {
-                origin: process.env.FRONTEND_URL || "http://localhost:3000",
-                methods: ["GET", "POST"]
-            }
-        });
-        this.binanceService = createBinanceService();
-        this.activeSymbols = new Set();
-    }
+  constructor(server: Server) {
+    this.wss = new WSServer({ server });
+    this.binanceService = new BinanceService();
+    this.binanceService.connect();
+    this.setupWebSocketServer();
+    this.setupBinanceHandlers();
+  }
 
-    public start(): void {
+  private setupWebSocketServer() {
+    this.wss.on('connection', (ws: WebSocket) => {
+      logger.info('Client connected');
+
+      this.clientSubscriptions.set(ws, new Set());
+
+      ws.on('message', (data: Buffer) => {
         try {
-            this.setupWebSocket();
-            this.httpServer.listen(this.port);
-            logger.info('WebSocket server started', { port: this.port });
+          const message = JSON.parse(data.toString());
+          this.handleMessage(ws, message);
         } catch (error) {
-            logger.error('Failed to start WebSocket server', {
-                port: this.port,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-            throw error;
+          logger.error('Error parsing message:', error);
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
         }
-    }
+      });
 
-    public close(): void {
-        try {
-            this.binanceService.disconnect();
-            this.io.close();
-            logger.info('WebSocket server closed');
-        } catch (error) {
-            logger.error('Error closing WebSocket server', {
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-            throw error;
+      ws.on('close', () => {
+        logger.info('Client disconnected');
+        this.handleClientDisconnect(ws);
+      });
+
+      ws.on('error', (error) => {
+        logger.error('WebSocket error:', error);
+        this.handleClientDisconnect(ws);
+      });
+    });
+  }
+
+  private setupBinanceHandlers() {
+    this.binanceService.on('trade', (trade: MarketTrade) => {
+      this.broadcastToSymbol(trade.symbol, { type: 'trade', data: trade });
+    });
+
+    this.binanceService.on('depth', (orderBook: OrderBook) => {
+      this.broadcastToSymbol(orderBook.symbol, { type: 'depth20', data: orderBook });
+    });
+
+    this.binanceService.on('ticker', (ticker: MarketTicker) => {
+      this.broadcastToSymbol(ticker.symbol, { type: 'ticker', data: ticker });
+    });
+
+    this.binanceService.on('error', (error: Error) => {
+      logger.error('Binance service error', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: error instanceof AppError ? error.code : 'UNKNOWN_ERROR'
+      });
+      this.broadcastToAll({ 
+        type: 'error', 
+        data: {
+          message: 'Market data service error',
+          code: error instanceof AppError ? error.code : ErrorCodes.WEBSOCKET_CONNECTION_FAILED
         }
+      });
+    });
+  }
+
+  private handleMessage(client: WebSocket, message: any) {
+    switch (message.type) {
+      case 'subscribe':
+        this.handleSubscribe(client, message.symbol);
+        break;
+      case 'unsubscribe':
+        this.handleUnsubscribe(client, message.symbol);
+        break;
+      default:
+        client.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
+    }
+  }
+
+  private handleSubscribe(client: WebSocket, symbol: string) {
+    if (!symbol) {
+      client.send(JSON.stringify({ type: 'error', message: 'Symbol is required' }));
+      return;
     }
 
-    private setupWebSocket(): void {
-        this.binanceService.connect();
-
-        // Handle Binance events
-        this.binanceService.on('trade', (trade: MarketTrade) => {
-            this.broadcastMessage('trade', trade);
-        });
-
-        this.binanceService.on('depth', (orderBook: OrderBook) => {
-            this.broadcastMessage('depth20', orderBook);
-        });
-
-        this.binanceService.on('ticker', (ticker: MarketTicker) => {
-            this.broadcastMessage('ticker', ticker);
-        });
-
-        this.binanceService.on('error', (error: Error) => {
-            logger.error('Binance service error', {
-                error: error instanceof Error ? error.message : 'Unknown error',
-                code: error instanceof AppError ? error.code : 'UNKNOWN_ERROR'
-            });
-
-            // Notify all connected clients about the error
-            this.io.emit('service_error', {
-                message: 'Market data service error',
-                code: error instanceof AppError ? error.code : ErrorCodes.WEBSOCKET_CONNECTION_FAILED
-            });
-        });
-
-        // Handle client connections
-        this.io.on('connection', (socket: Socket) => {
-            logger.info('Client connected', { clientId: socket.id });
-
-            socket.on('subscribe', async (symbol: string) => {
-                await this.handleSubscribe(socket, symbol);
-            });
-
-            socket.on('unsubscribe', (symbol: string) => {
-                this.handleUnsubscribe(socket, symbol);
-            });
-
-            socket.on('disconnect', () => {
-                this.handleDisconnect(socket);
-            });
-
-            socket.on('error', (error: Error) => {
-                logger.error('Socket error', {
-                    clientId: socket.id,
-                    error: error instanceof Error ? error.message : 'Unknown error'
-                });
-            });
-        });
+    if (!this.subscriptions.has(symbol)) {
+      this.subscriptions.set(symbol, new Set());
+      this.binanceService.subscribe(symbol, streams);
     }
+    this.subscriptions.get(symbol)?.add(client);
+    this.clientSubscriptions.get(client)?.add(symbol);
+    logger.info(`Client subscribed to ${symbol}`);
+  }
 
-    private broadcastMessage(type: StreamType, data: MarketTrade | OrderBook | MarketTicker): void {
-        try {
-            const message: WebSocketMessage = { type, data };
-            this.io.to(data.symbol).emit('market_data', message);
-            logger.debug('Broadcasting market data', { 
-                type, 
-                symbol: data.symbol 
-            });
-        } catch (error) {
-            logger.error('Error broadcasting message', {
-                type,
-                symbol: data?.symbol,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
+  private handleUnsubscribe(client: WebSocket, symbol: string) {
+    if (!symbol) return;
+
+    this.subscriptions.get(symbol)?.delete(client);
+    if (this.subscriptions.get(symbol)?.size === 0) {
+      this.subscriptions.delete(symbol);
+      this.binanceService.unsubscribe(symbol, streams);
+    }
+    this.clientSubscriptions.get(client)?.delete(symbol);
+    logger.info(`Client unsubscribed from ${symbol}`);
+  }
+
+  private handleClientDisconnect(client: WebSocket) {
+    const clientSubs = this.clientSubscriptions.get(client);
+    if (clientSubs) {
+      for (const symbol of clientSubs) {
+        this.subscriptions.get(symbol)?.delete(client);
+        if (this.subscriptions.get(symbol)?.size === 0) {
+          this.subscriptions.delete(symbol);
+          this.binanceService.unsubscribe(symbol, streams);
         }
+      }
     }
+    this.clientSubscriptions.delete(client);
+  }
 
-    private async handleSubscribe(socket: Socket, symbol: string): Promise<void> {
-        try {
-            if (!symbol || typeof symbol !== 'string') {
-                throw new AppError(
-                    'Invalid symbol provided',
-                    ErrorCodes.WEBSOCKET_SUBSCRIPTION_FAILED,
-                    400
-                );
-            }
+  private broadcastToSymbol(symbol: string, message: WebSocketMessage) {
+    const clients = this.subscriptions.get(symbol);
+    if (!clients) return;
 
-            if (!this.activeSymbols.has(symbol)) {
-                await this.binanceService.subscribe(symbol, streams);
-                this.activeSymbols.add(symbol);
-                logger.info('New symbol subscription', { symbol });
-            }
-
-            socket.join(symbol);
-            logger.info('Client subscribed to symbol', {
-                clientId: socket.id,
-                symbol
-            });
-        } catch (error) {
-            const errorMessage = error instanceof AppError ? error.message : 'Subscription failed';
-            const errorCode = error instanceof AppError ? error.code : ErrorCodes.WEBSOCKET_SUBSCRIPTION_FAILED;
-            
-            logger.error('Error subscribing to symbol', {
-                clientId: socket.id,
-                symbol,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-
-            socket.emit('error', { 
-                message: errorMessage,
-                code: errorCode
-            });
-        }
+    const messageStr = JSON.stringify(message);
+    for (const client of clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(messageStr);
+      }
     }
+    logger.debug('Broadcasting market data', { type: message.type, symbol });
+  }
 
-    private handleUnsubscribe(socket: Socket, symbol: string): void {
-        try {
-            socket.leave(symbol);
-            logger.info('Client unsubscribed from symbol', {
-                clientId: socket.id,
-                symbol
-            });
+  private broadcastToAll(message: WebSocketMessage) {
+    const messageStr = JSON.stringify(message);
+    this.wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(messageStr);
+      }
+    });
+    logger.debug('Broadcasting to all clients', { type: message.type });
+  }
 
-            // Check if there are any clients still subscribed to this symbol
-            const room = this.io.sockets.adapter.rooms.get(symbol);
-            if (!room || room.size === 0) {
-                this.binanceService.unsubscribe(symbol, streams);
-                this.activeSymbols.delete(symbol);
-                logger.info('Removed symbol subscription', { symbol });
-            }
-        } catch (error) {
-            logger.error('Error unsubscribing from symbol', {
-                clientId: socket.id,
-                symbol,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-
-    private handleDisconnect(socket: Socket): void {
-        try {
-            logger.info('Client disconnected', { clientId: socket.id });
-            this.cleanupSubscriptions();
-        } catch (error) {
-            logger.error('Error handling client disconnect', {
-                clientId: socket.id,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-
-    private cleanupSubscriptions(): void {
-        try {
-            // Check all active symbols and remove those with no subscribers
-            for (const symbol of this.activeSymbols) {
-                const room = this.io.sockets.adapter.rooms.get(symbol);
-                if (!room || room.size === 0) {
-                    this.binanceService.unsubscribe(symbol, streams);
-                    this.activeSymbols.delete(symbol);
-                    logger.info('Cleaned up subscription', { symbol });
-                }
-            }
-        } catch (error) {
-            logger.error('Error cleaning up subscriptions', {
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
+  public close() {
+    this.wss.close();
+    this.binanceService.disconnect();
+  }
 }
 
-export const createWebSocketServer = (port: number): WebSocketServer => {
-    return new WebSocketServer(port);
+export const createWebSocketServer = (server: Server): WebSocketServer => {
+  return new WebSocketServer(server);
 };

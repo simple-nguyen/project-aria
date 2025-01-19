@@ -1,70 +1,58 @@
-import { Server, Socket } from 'socket.io';
-import { createServer } from 'http';
+import { Server } from 'http';
+import { WebSocket, WebSocketServer as WSServer } from 'ws';
 import { WebSocketServer, createWebSocketServer } from '../websocketServer';
-import { BinanceService, createBinanceService } from '../binanceService';
+import { BinanceService } from '../binanceService';
 import { MarketTrade, OrderBook, MarketTicker } from '@project-aria/shared';
 import logger from '../../utils/logger';
 import { AppError, ErrorCodes } from '../../utils/errors';
 import { streams } from '../../utils/stream';
 
 // Mock dependencies
-jest.mock('socket.io');
+jest.mock('ws');
 jest.mock('../binanceService');
 jest.mock('http');
 jest.mock('../../utils/logger');
 
 describe('WebSocketServer', () => {
     let wsServer: WebSocketServer;
-    let mockServer: jest.Mocked<Server>;
-    let mockSocket: jest.Mocked<Socket>;
+    let mockWSServer: jest.Mocked<WSServer>;
+    let mockWebSocket: jest.Mocked<WebSocket>;
     let mockBinanceService: jest.Mocked<BinanceService>;
-    let mockHttpServer: any;
-    let socketHandlers: { [event: string]: Function } = {};
+    let mockHttpServer: jest.Mocked<Server>;
+    let wsHandlers: { [event: string]: Function } = {};
     let binanceHandlers: { [event: string]: Function } = {};
 
     beforeEach(() => {
         jest.clearAllMocks();
-        socketHandlers = {};
+        wsHandlers = {};
         binanceHandlers = {};
 
-        // Mock Socket.IO server
-        mockServer = {
+        // Mock WebSocket client
+        mockWebSocket = {
+            send: jest.fn(),
             on: jest.fn().mockImplementation((event: string, callback: Function) => {
-                socketHandlers[event] = callback;
-                return mockServer;
+                wsHandlers[event] = callback;
+                return mockWebSocket;
             }),
-            emit: jest.fn(),
-            to: jest.fn().mockReturnThis(),
-            close: jest.fn(),
-            sockets: {
-                adapter: {
-                    rooms: new Map()
-                }
-            }
-        } as unknown as jest.Mocked<Server>;
+            readyState: WebSocket.OPEN,
+        } as unknown as jest.Mocked<WebSocket>;
 
-        // Mock Socket.IO socket
-        mockSocket = {
-            id: 'test-client',
+        // Mock WebSocket server
+        mockWSServer = {
             on: jest.fn().mockImplementation((event: string, callback: Function) => {
-                socketHandlers[event] = callback;
-                return mockSocket;
+                wsHandlers[event] = callback;
+                return mockWSServer;
             }),
-            join: jest.fn(),
-            leave: jest.fn(),
-            emit: jest.fn(),
-            to: jest.fn().mockReturnThis()
-        } as unknown as jest.Mocked<Socket>;
+            close: jest.fn(),
+            clients: new Set([mockWebSocket]),
+        } as unknown as jest.Mocked<WSServer>;
+
+        (WSServer as unknown as jest.Mock).mockImplementation(() => mockWSServer);
 
         // Mock HTTP server
         mockHttpServer = {
-            listen: jest.fn(),
-            close: jest.fn()
-        };
-        (createServer as jest.Mock).mockReturnValue(mockHttpServer);
-
-        // Mock Socket.IO constructor
-        (Server as unknown as jest.Mock).mockImplementation(() => mockServer);
+            on: jest.fn(),
+        } as unknown as jest.Mocked<Server>;
 
         // Mock Binance service
         mockBinanceService = {
@@ -75,101 +63,99 @@ describe('WebSocketServer', () => {
             on: jest.fn().mockImplementation((event: string, callback: Function) => {
                 binanceHandlers[event] = callback;
                 return mockBinanceService;
-            })
+            }),
         } as unknown as jest.Mocked<BinanceService>;
-        (createBinanceService as jest.Mock).mockReturnValue(mockBinanceService);
+
+        (BinanceService as unknown as jest.Mock).mockImplementation(() => mockBinanceService);
 
         // Create WebSocket server instance
-        wsServer = createWebSocketServer(8080);
+        wsServer = createWebSocketServer(mockHttpServer);
     });
 
-    describe('start', () => {
-        it('should start the server and setup WebSocket handlers', () => {
-            wsServer.start();
-
-            expect(mockHttpServer.listen).toHaveBeenCalledWith(8080);
+    describe('initialization', () => {
+        it('should initialize the server and setup WebSocket handlers', () => {
+            expect(mockWSServer.on).toHaveBeenCalledWith('connection', expect.any(Function));
             expect(mockBinanceService.connect).toHaveBeenCalled();
-            expect(mockServer.on).toHaveBeenCalledWith('connection', expect.any(Function));
         });
 
         it('should setup Binance service event handlers', () => {
-            wsServer.start();
-
             expect(mockBinanceService.on).toHaveBeenCalledWith('trade', expect.any(Function));
             expect(mockBinanceService.on).toHaveBeenCalledWith('depth', expect.any(Function));
             expect(mockBinanceService.on).toHaveBeenCalledWith('ticker', expect.any(Function));
             expect(mockBinanceService.on).toHaveBeenCalledWith('error', expect.any(Function));
         });
-
-        it('should handle server start errors', () => {
-            const error = new Error('Server start failed');
-            mockHttpServer.listen.mockImplementation(() => {
-                throw error;
-            });
-
-            expect(() => wsServer.start()).toThrow(error);
-            expect(logger.error).toHaveBeenCalled();
-        });
     });
 
     describe('client connections', () => {
         beforeEach(() => {
-            wsServer.start();
-            socketHandlers.connection(mockSocket);
+            // Simulate client connection
+            wsHandlers.connection(mockWebSocket);
         });
 
         it('should handle client connections', () => {
-            expect(mockSocket.on).toHaveBeenCalledWith('subscribe', expect.any(Function));
-            expect(mockSocket.on).toHaveBeenCalledWith('unsubscribe', expect.any(Function));
-            expect(mockSocket.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
-            expect(logger.info).toHaveBeenCalledWith('Client connected', { clientId: 'test-client' });
+            expect(mockWebSocket.on).toHaveBeenCalledWith('message', expect.any(Function));
+            expect(mockWebSocket.on).toHaveBeenCalledWith('close', expect.any(Function));
+            expect(mockWebSocket.on).toHaveBeenCalledWith('error', expect.any(Function));
+            expect(logger.info).toHaveBeenCalledWith('Client connected');
         });
 
-        it('should handle client subscriptions', async () => {
-            await socketHandlers.subscribe('BTCUSDT');
-
-            expect(mockBinanceService.subscribe).toHaveBeenCalledWith('BTCUSDT', streams);
-            expect(mockSocket.join).toHaveBeenCalledWith('BTCUSDT');
-            expect(logger.info).toHaveBeenCalledWith('Client subscribed to symbol', {
-                clientId: 'test-client',
+        it('should handle client subscriptions', () => {
+            const subscribeMessage = JSON.stringify({
+                type: 'subscribe',
                 symbol: 'BTCUSDT'
             });
+
+            wsHandlers.message(Buffer.from(subscribeMessage));
+
+            expect(mockBinanceService.subscribe).toHaveBeenCalledWith('BTCUSDT', streams);
+            expect(logger.info).toHaveBeenCalledWith('Client subscribed to BTCUSDT');
         });
 
-        it('should handle subscription errors', async () => {
-            const error = new AppError('Subscription failed', ErrorCodes.WEBSOCKET_SUBSCRIPTION_FAILED, 500);
-            mockBinanceService.subscribe.mockRejectedValue(error);
+        it('should handle invalid subscription messages', () => {
+            const invalidMessage = 'invalid json';
 
-            await socketHandlers.subscribe('BTCUSDT');
+            wsHandlers.message(Buffer.from(invalidMessage));
 
-            expect(mockSocket.emit).toHaveBeenCalledWith('error', {
-                code: ErrorCodes.WEBSOCKET_SUBSCRIPTION_FAILED,
-                message: error.message
-            });
-            expect(logger.error).toHaveBeenCalled();
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                JSON.stringify({ type: 'error', message: 'Invalid message format' })
+            );
         });
 
         it('should handle client unsubscriptions', () => {
-            socketHandlers.unsubscribe('BTCUSDT');
-
-            expect(mockSocket.leave).toHaveBeenCalledWith('BTCUSDT');
-            expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith('BTCUSDT', streams);
-            expect(logger.info).toHaveBeenCalledWith('Client unsubscribed from symbol', {
-                clientId: 'test-client',
+            // First subscribe
+            const subscribeMessage = JSON.stringify({
+                type: 'subscribe',
                 symbol: 'BTCUSDT'
             });
+            wsHandlers.message(Buffer.from(subscribeMessage));
+
+            // Then unsubscribe
+            const unsubscribeMessage = JSON.stringify({
+                type: 'unsubscribe',
+                symbol: 'BTCUSDT'
+            });
+            wsHandlers.message(Buffer.from(unsubscribeMessage));
+
+            expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith('BTCUSDT', streams);
+            expect(logger.info).toHaveBeenCalledWith('Client unsubscribed from BTCUSDT');
         });
 
         it('should handle client disconnections', () => {
-            socketHandlers.disconnect();
+            wsHandlers.close();
 
-            expect(logger.info).toHaveBeenCalledWith('Client disconnected', { clientId: 'test-client' });
+            expect(logger.info).toHaveBeenCalledWith('Client disconnected');
         });
     });
 
     describe('market data broadcasting', () => {
         beforeEach(() => {
-            wsServer.start();
+            // Simulate client connection and subscription
+            wsHandlers.connection(mockWebSocket);
+            const subscribeMessage = JSON.stringify({
+                type: 'subscribe',
+                symbol: 'BTCUSDT'
+            });
+            wsHandlers.message(Buffer.from(subscribeMessage));
         });
 
         it('should broadcast trade data', () => {
@@ -184,11 +170,12 @@ describe('WebSocketServer', () => {
 
             binanceHandlers.trade(mockTrade);
 
-            expect(mockServer.to).toHaveBeenCalledWith('BTCUSDT');
-            expect(mockServer.emit).toHaveBeenCalledWith('market_data', {
-                type: 'trade',
-                data: mockTrade
-            });
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                JSON.stringify({
+                    type: 'trade',
+                    data: mockTrade
+                })
+            );
         });
 
         it('should broadcast depth data', () => {
@@ -200,52 +187,51 @@ describe('WebSocketServer', () => {
 
             binanceHandlers.depth(mockOrderBook);
 
-            expect(mockServer.to).toHaveBeenCalledWith('BTCUSDT');
-            expect(mockServer.emit).toHaveBeenCalledWith('market_data', {
-                type: 'depth20',
-                data: mockOrderBook
-            });
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                JSON.stringify({
+                    type: 'depth20',
+                    data: mockOrderBook
+                })
+            );
         });
 
         it('should broadcast ticker data', () => {
             const mockTicker: MarketTicker = {
                 symbol: 'BTCUSDT',
-                priceChange: '2',
+                lastPrice: '50000',
+                priceChange: '1000',
                 priceChangePercent: '2',
-                lastPrice: '51000',
-                openPrice: '49000',
-                highPrice: '52000',
-                lowPrice: '48000',
                 volume: '100',
                 quoteVolume: '5000000',
+                openPrice: '49000',
+                highPrice: '51000',
+                lowPrice: '48000'
             };
 
             binanceHandlers.ticker(mockTicker);
 
-            expect(mockServer.to).toHaveBeenCalledWith('BTCUSDT');
-            expect(mockServer.emit).toHaveBeenCalledWith('market_data', {
-                type: 'ticker',
-                data: mockTicker
-            });
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                JSON.stringify({
+                    type: 'ticker',
+                    data: mockTicker
+                })
+            );
         });
 
-        it('should handle broadcast errors', () => {
-            mockServer.emit.mockImplementation(() => {
-                throw new Error('Broadcast failed');
-            });
+        it('should broadcast error messages to all clients', () => {
+            const error = new AppError('Market data error', ErrorCodes.WEBSOCKET_CONNECTION_FAILED);
 
-            const mockTrade: MarketTrade = {
-                symbol: 'BTCUSDT',
-                price: '50000',
-                quantity: '1',
-                timestamp: 123456789,
-                isBuyerMaker: false,
-                tradeId: 1
-            };
+            binanceHandlers.error(error);
 
-            binanceHandlers.trade(mockTrade);
-
-            expect(logger.error).toHaveBeenCalled();
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                JSON.stringify({
+                    type: 'error',
+                    data: {
+                        message: 'Market data service error',
+                        code: ErrorCodes.WEBSOCKET_CONNECTION_FAILED
+                    }
+                })
+            );
         });
     });
 
@@ -253,19 +239,8 @@ describe('WebSocketServer', () => {
         it('should close the server and cleanup resources', () => {
             wsServer.close();
 
+            expect(mockWSServer.close).toHaveBeenCalled();
             expect(mockBinanceService.disconnect).toHaveBeenCalled();
-            expect(mockServer.close).toHaveBeenCalled();
-            expect(logger.info).toHaveBeenCalledWith('WebSocket server closed');
-        });
-
-        it('should handle close errors', () => {
-            const error = new Error('Close failed');
-            mockServer.close.mockImplementation(() => {
-                throw error;
-            });
-
-            expect(() => wsServer.close()).toThrow(error);
-            expect(logger.error).toHaveBeenCalled();
         });
     });
 });

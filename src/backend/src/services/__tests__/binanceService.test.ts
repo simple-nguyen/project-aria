@@ -1,7 +1,6 @@
 import WebSocket from 'ws';
 import { BinanceService, createBinanceService } from '../binanceService';
 import { AppError, ErrorCodes } from '../../utils/errors';
-import logger from '../../utils/logger';
 import { streams } from '../../utils/stream';
 
 // Mock dependencies

@@ -30,8 +30,8 @@ function Ticker({ symbol }: TickerProps) {
 
   return (
     <div className="bg-primary p-4 rounded-lg shadow">
-      <div className="flex items-start justify-between flex-col sm:flex-row">
-        <div className="flex items-center mb-4 sm:mb-0">
+      <div className="flex items-start justify-between flex-col lg:flex-row">
+        <div className="flex items-center mb-4 lg:mb-0">
           <div className="text-2xl font-bold text-white">{symbol.replace('_', '/')}</div>
           <div className="flex items-center ml-5">
             <span className="text-xl font-semibold text-white top-[2px] relative">
@@ -39,7 +39,7 @@ function Ticker({ symbol }: TickerProps) {
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-6 lg:gap-4 text-sm">
+        <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-6 lg:gap-4 text-sm">
           <div>
             <p className="text-gray-600">24h Change</p>
             <p className={`font-medium ${isPriceUp ? 'text-green-400' : 'text-red-400'}`}>

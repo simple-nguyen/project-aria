@@ -1,4 +1,4 @@
-export type StreamType = 'trade' | 'depth20@100ms' | 'depth20' | 'ticker';
+export type StreamType = 'trade' | 'depth20@100ms' | 'depth20' | 'ticker' | 'error';
 
 export interface MarketTrade {
     symbol: string;
@@ -27,7 +27,12 @@ export interface MarketTicker {
     quoteVolume: string;
 }
 
+export interface WSErrorMessage {
+    message: string;
+    code: string;
+}
+
 export interface WebSocketMessage {
     type: StreamType;
-    data: MarketTrade | OrderBook | MarketTicker;
+    data: MarketTrade | OrderBook | MarketTicker | WSErrorMessage;
 }

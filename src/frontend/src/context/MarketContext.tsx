@@ -1,11 +1,10 @@
-import React, { createContext, useReducer, useEffect, useCallback, useMemo, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+import React, { createContext, useReducer, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MarketTicker, MarketTrade, OrderBook, WebSocketMessage } from '@project-aria/shared';
 
-const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:4001';
+const WEBSOCKET_URL = (import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:4001').replace(/^http/, 'ws');
 
 if (!import.meta.env.VITE_WEBSOCKET_URL) {
-  console.warn('VITE_WEBSOCKET_URL not set in environment variables, using default: http://localhost:4001');
+  console.warn('VITE_WEBSOCKET_URL not set in environment variables, using default: ws://localhost:4001');
 }
 
 interface DecimalPrecision {
@@ -24,7 +23,7 @@ interface MarketState {
 
 type MarketAction =
   | { type: 'SET_TICKER'; payload: MarketTicker }
-  | { type: 'SET_TRADE'; payload: { symbol: string; trade: MarketTrade } }
+  | { type: 'SET_TRADE'; payload: MarketTrade }
   | { type: 'SET_ORDER_BOOK'; payload: OrderBook }
   | { type: 'SET_ERROR'; payload: string }
   | { type: 'CLEAR_ERROR' }
@@ -40,14 +39,12 @@ const initialState: MarketState = {
   decimalPrecision: {},
 };
 
-// Helper function to count decimal places
 function getDecimalPlaces(value: string | number): number {
   const str = value.toString();
   const decimalIndex = str.indexOf('.');
   return decimalIndex === -1 ? 0 : str.length - decimalIndex - 1;
 }
 
-// Helper function to update decimal precision
 function updatePrecision(current: DecimalPrecision | undefined, price: string | number, amount: string | number): DecimalPrecision {
   const priceDecimals = getDecimalPlaces(price);
   const amountDecimals = getDecimalPlaces(amount);
@@ -62,7 +59,6 @@ function updatePrecision(current: DecimalPrecision | undefined, price: string | 
   };
 }
 
-// Separate contexts for different data types
 export const MarketDataContext = createContext<{
   tickers: Record<string, MarketTicker>;
   trades: Record<string, MarketTrade[]>;
@@ -92,13 +88,12 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
       };
     case 'SET_TRADE': {
       const currentTrades = state.trades[action.payload.symbol] || [];
-      const newTrades = [action.payload.trade, ...currentTrades].slice(0, 20);
+      const newTrades = [action.payload, ...currentTrades].slice(0, 20);
       
-      // Update decimal precision based on trade data
       const newPrecision = updatePrecision(
         state.decimalPrecision[action.payload.symbol],
-        action.payload.trade.price,
-        action.payload.trade.quantity
+        action.payload.price,
+        action.payload.quantity
       );
 
       return {
@@ -152,10 +147,11 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(marketReducer, initialState);
-  const [socket, setSocket] = React.useState<Socket | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const pendingSubscriptions = useRef<Set<string>>(new Set());
+  const reconnectTimeoutRef = useRef<number>();
+  const reconnectAttempts = useRef(0);
 
-  // No point memoizing - changes too frequently at this level
   const marketData = {
     tickers: state.tickers,
     trades: state.trades,
@@ -163,106 +159,123 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     decimalPrecision: state.decimalPrecision,
   };
 
-  // Memoize error state
   const errorState = useMemo(() => ({
     error: state.error,
     isConnected: state.isConnected,
   }), [state.error, state.isConnected]);
 
-  // Handle subscriptions
+  const handleMessage = useCallback((event: MessageEvent) => {
+    try {
+      const message: WebSocketMessage = JSON.parse(event.data);
+      switch (message.type) {
+        case 'ticker':
+          dispatch({ type: 'SET_TICKER', payload: message.data as MarketTicker });
+          break;
+        case 'trade':
+          dispatch({
+            type: 'SET_TRADE',
+            payload: message.data as MarketTrade,
+          });
+          break;
+        case 'depth20':
+          dispatch({ type: 'SET_ORDER_BOOK', payload: message.data as OrderBook });
+          break;
+        default:
+          console.warn('Unknown message type:', message.type);
+      }
+    } catch (error) {
+      console.error('Error parsing message:', error);
+    }
+  }, []);
+
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const ws = new WebSocket(WEBSOCKET_URL);
+
+    ws.onopen = () => {
+      console.log('Connected to WebSocket server');
+      dispatch({ type: 'SET_CONNECTED', payload: true });
+      reconnectAttempts.current = 0;
+
+      // Resubscribe to pending subscriptions after a short delay
+      setTimeout(() => {
+        if (pendingSubscriptions.current.size > 0) {
+          console.log('Resubscribing to pending symbols:', Array.from(pendingSubscriptions.current));
+          pendingSubscriptions.current.forEach(symbol => {
+            ws.send(JSON.stringify({ type: 'subscribe', symbol }));
+          });
+        }
+      }, 2000);
+    };
+
+    ws.onclose = () => {
+      console.log('Disconnected from WebSocket server');
+      dispatch({ type: 'SET_CONNECTED', payload: false });
+
+      // Exponential backoff with jitter for reconnection
+      const baseDelay = 1000;
+      const maxDelay = 30000;
+      const jitter = Math.random() * 1000;
+      const delay = Math.min(baseDelay * Math.pow(2, reconnectAttempts.current) + jitter, maxDelay);
+      
+      reconnectAttempts.current++;
+      reconnectTimeoutRef.current = window.setTimeout(connect, delay);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'WebSocket connection error' });
+    };
+
+    ws.onmessage = handleMessage;
+
+    wsRef.current = ws;
+  }, [handleMessage]);
+
   const handleSubscribe = useCallback((symbol: string) => {
     if (!symbol) return;
     const formattedSymbol = symbol.replace('_', '').toUpperCase();
     
-    if (!socket?.connected) {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.log('Socket not connected, adding to pending subscriptions:', formattedSymbol);
       pendingSubscriptions.current.add(formattedSymbol);
     } else {
       console.log('Subscribing to:', formattedSymbol);
-      socket.emit('subscribe', formattedSymbol);
+      wsRef.current.send(JSON.stringify({ type: 'subscribe', symbol: formattedSymbol }));
     }
-  }, [socket]);
+  }, []);
 
   const handleUnsubscribe = useCallback((symbol: string) => {
     if (!symbol) return;
     const formattedSymbol = symbol.replace('_', '').toUpperCase();
     
-    if (socket?.connected) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('Unsubscribing from:', formattedSymbol);
-      socket.emit('unsubscribe', formattedSymbol);
+      wsRef.current.send(JSON.stringify({ type: 'unsubscribe', symbol: formattedSymbol }));
     }
     pendingSubscriptions.current.delete(formattedSymbol);
-  }, [socket]);
-
-  // Memoize actions
-  const marketActions = useMemo(() => ({
-    subscribe: handleSubscribe,
-    unsubscribe: handleUnsubscribe,
-  }), [handleSubscribe, handleUnsubscribe]);
-
-  const handleMessage = useCallback((message: WebSocketMessage) => {
-    switch (message.type) {
-      case 'ticker':
-        dispatch({ type: 'SET_TICKER', payload: message.data as MarketTicker });
-        break;
-      case 'trade':
-        dispatch({
-          type: 'SET_TRADE',
-          payload: { symbol: message.data.symbol, trade: message.data as MarketTrade },
-        });
-        break;
-      case 'depth20':
-        dispatch({ type: 'SET_ORDER_BOOK', payload: message.data as OrderBook });
-        break;
-      default:
-        console.warn('Unknown message type:', message.type);
-    }
   }, []);
 
+  const marketActions = {
+    subscribe: handleSubscribe,
+    unsubscribe: handleUnsubscribe,
+  };
+
   useEffect(() => {
-    const newSocket = io(WEBSOCKET_URL, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
-
-    newSocket.on('connect', async () => {
-      console.log('Connected to WebSocket server');
-      dispatch({ type: 'SET_CONNECTED', payload: true });
-    
-      // Resubscribe to pending subscriptions
-      if (pendingSubscriptions.current.size > 0) {
-        // Give us some time to connect to the backend properly before subscribing
-        await(new Promise((res) => {
-          setTimeout(res, 2000);
-        }))
-        console.log('Resubscribing to pending symbols:', Array.from(pendingSubscriptions.current));
-        pendingSubscriptions.current.forEach(symbol => {
-          newSocket.emit('subscribe', symbol);
-        });
-      }
-    });
-
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from WebSocket server');
-      dispatch({ type: 'SET_CONNECTED', payload: false });
-    });
-
-    newSocket.on('error', (error: Error) => {
-      console.error('WebSocket error:', error);
-      dispatch({ type: 'SET_ERROR', payload: error.message });
-    });
-
-    newSocket.on('market_data', handleMessage);
-
-    setSocket(newSocket);
+    connect();
 
     return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
       pendingSubscriptions.current.clear();
-      newSocket.close();
     };
-  }, [handleMessage]);
+  }, [connect]);
 
   return (
     <MarketErrorContext.Provider value={errorState}>

@@ -10,7 +10,7 @@ const SymbolTabs = ({ activeSymbol, onSymbolChange, tickers }: {
   }) => {
     const { subscribe, unsubscribe } = useMarketActions();
     const subscribedRef = useRef(false);
-    
+
     useEffect(() => {
         if (!subscribedRef.current) {
         console.log('Subscribing to symbols...');
@@ -27,7 +27,7 @@ const SymbolTabs = ({ activeSymbol, onSymbolChange, tickers }: {
         };
     }, [subscribe, unsubscribe]);
 
-    return <div className="overflow-x-auto bg-primary p-4 rounded-lg shadow">
+    return <div className="overflow-x-auto bg-primary p-4 rounded-lg shadow [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-sky-300 [&::-webkit-scrollbar-thumb]:bg-sky-500 [&::-webkit-scrollbar-thumb]:rounded-full">
       <div>
         <nav className="-mb-px flex space-x-8">
           {tickers.map((symbol) => (

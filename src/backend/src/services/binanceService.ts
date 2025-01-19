@@ -49,6 +49,10 @@ export class BinanceService extends EventEmitter {
                 }
             });
 
+            this.ws.on('pong', (data: Buffer) => {
+                logger.info('Pong received', { data });
+            })
+
         } catch (error) {
             logger.error('Error connecting to Binance WebSocket', {
                 error: error instanceof Error ? error.message : 'Unknown error'

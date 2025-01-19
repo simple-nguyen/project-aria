@@ -102,8 +102,3 @@ export function useMarketActions() {
   }
   return actions;
 }
-
-export function useMarketConnected(): boolean {
-  const { isConnected } = useMarketError();
-  return isConnected;
-}

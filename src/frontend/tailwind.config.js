@@ -6,6 +6,10 @@ module.exports = {
       'backgroundColor': {
         'primary': 'rgba(24,26,32,1)',
         'secondary': 'rgba(11,14,17,1)'
+      },
+      scrollbar: {
+        thumb: 'bg-sky-500',
+        track: 'bg-sky-300',
       }
     },
   },

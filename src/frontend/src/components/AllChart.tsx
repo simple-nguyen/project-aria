@@ -18,8 +18,7 @@ function AllChart({ symbol }: AllChartProps) {
       <div className="gap-2 grid grid-cols-1">
         <OrderBookChart
             symbol={symbol}
-            width={1500}
-            height={300}
+            aspectRatio={2.5}
           />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <TradeHistory symbol={symbol} />
