@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
+COPY tsconfig.json ./
 COPY src/frontend/package*.json ./src/frontend/
 COPY src/shared/package*.json ./src/shared/
 

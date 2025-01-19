@@ -1,6 +1,6 @@
 # Project Aria - Real-time Crypto Analytics Platform
 
-A modern full-stack application for real-time cryptocurrency market analysis and visualization. Built with React, Remix, TypeScript, and WebSocket integration.
+A modern full-stack application for real-time cryptocurrency market analysis and visualization. Built with React, TypeScript, and WebSocket integration.
 
 ## Features
 
@@ -12,9 +12,8 @@ A modern full-stack application for real-time cryptocurrency market analysis and
 
 ## Tech Stack
 
-- **Frontend**: React, Remix, TypeScript, D3.js
+- **Frontend**: React, Vite, TypeScript, D3.js
 - **Backend**: Node.js, Express, TypeScript, WebSocket
-- **Database**: PostgreSQL
 - **Infrastructure**: Docker, Docker Compose
 
 ## Prerequisites
@@ -51,7 +50,7 @@ The application will be available at:
 ```
 project-aria/
 ├── src/
-│   ├── frontend/    # React/Remix frontend application
+│   ├── frontend/    # React frontend
 │   ├── backend/     # Express backend server
 │   └── shared/      # Shared types and utilities
 ├── docker/          # Dockerfile definitions

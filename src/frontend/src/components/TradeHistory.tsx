@@ -23,26 +23,32 @@ function TradeHistory({ symbol }: TradeHistoryProps) {
             </tr>
           </thead>
           <tbody>
-            {trades && trades.map((trade) => (
-              <tr key={trade.tradeId}>
-                <td className={`text-left text-sm ${trade.isBuyerMaker ? 'text-green-400' : 'text-red-400'} py-1`}>{formatFiat(trade.price, { minimumFractionDigits: precision.price})}</td>
-                <td className="text-right text-sm text-white py-1">{formatCrypto(trade.quantity, { minimumFractionDigits: precision.amount })}</td>
-                <td className="text-right text-sm text-white py-1">
-                  {new Date(trade.timestamp).toLocaleTimeString(undefined, {
-                    hour: 'numeric',
-                    minute: 'numeric',
-                    second: 'numeric',
-                    hour12: false,
-                  })}
-                </td>
-              </tr>
-            ))}
+            {trades &&
+              trades.map(trade => (
+                <tr key={trade.tradeId}>
+                  <td
+                    className={`text-left text-sm ${trade.isBuyerMaker ? 'text-green-400' : 'text-red-400'} py-1`}
+                  >
+                    {formatFiat(trade.price, { minimumFractionDigits: precision.price })}
+                  </td>
+                  <td className="text-right text-sm text-white py-1">
+                    {formatCrypto(trade.quantity, { minimumFractionDigits: precision.amount })}
+                  </td>
+                  <td className="text-right text-sm text-white py-1">
+                    {new Date(trade.timestamp).toLocaleTimeString(undefined, {
+                      hour: 'numeric',
+                      minute: 'numeric',
+                      second: 'numeric',
+                      hour12: false,
+                    })}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
     </div>
   );
 }
-
 
 export default memo(TradeHistory);

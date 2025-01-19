@@ -9,7 +9,7 @@ export default function OrderBookHistory({ symbol }: OrderBookHistoryProps) {
   const orderbook = useMarketOrderBook(symbol);
   const precision = useMarketPrecision(symbol);
 
-  const { bids, asks } = orderbook || { bids: [[0,0,0]], asks: [[0,0,0]] };
+  const { bids, asks } = orderbook || { bids: [[0, 0, 0]], asks: [[0, 0, 0]] };
 
   const [, quote] = symbol.split('_');
 
@@ -26,18 +26,45 @@ export default function OrderBookHistory({ symbol }: OrderBookHistoryProps) {
             </tr>
           </thead>
           <tbody>
-            {asks.sort((a,b) => b[0] - a[0]).slice(-10).map((ask, index) => (
+            {asks
+              .sort((a, b) => b[0] - a[0])
+              .slice(-10)
+              .map((ask, index) => (
+                <tr key={index}>
+                  <td className="text-left text-sm py-1 text-red-400">
+                    {quote.includes('USD')
+                      ? formatFiat(ask[0], { minimumFractionDigits: precision.price })
+                      : formatCrypto(ask[0], { minimumFractionDigits: precision.amount })}
+                  </td>
+                  <td className="text-right text-sm py-1 text-white">
+                    {quote.includes('USD')
+                      ? formatCrypto(ask[1], { minimumFractionDigits: precision.amount })
+                      : formatFiat(ask[1], { minimumFractionDigits: precision.amount })}
+                  </td>
+                  <td className="text-right text-sm py-1 text-white">
+                    {quote.includes('USD')
+                      ? formatFiat(ask[0] * ask[1], { minimumFractionDigits: 2 })
+                      : formatCrypto(ask[0] * ask[1], { minimumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              ))}
+            {bids.slice(0, 10).map((bid, index) => (
               <tr key={index}>
-                <td className="text-left text-sm py-1 text-red-400">{quote.includes('USD') ? formatFiat(ask[0], { minimumFractionDigits: precision.price }) : formatCrypto(ask[0], { minimumFractionDigits: precision.amount })}</td>
-                <td className="text-right text-sm py-1 text-white">{quote.includes('USD') ? formatCrypto(ask[1], { minimumFractionDigits: precision.amount }) : formatFiat(ask[1], { minimumFractionDigits: precision.amount })}</td>
-                <td className="text-right text-sm py-1 text-white">{quote.includes('USD') ? formatFiat(ask[0] * ask[1], { minimumFractionDigits: 2 }) : formatCrypto(ask[0] * ask[1], { minimumFractionDigits: 2 })}</td>
-              </tr>
-            ))}
-            {bids.slice(0,10).map((bid, index) => (
-              <tr key={index}>
-                <td className={`text-left text-sm py-1 text-green-400`}>{quote.includes('USD') ? formatFiat(bid[0], { minimumFractionDigits: precision.price }) : formatCrypto(bid[0], { minimumFractionDigits: precision.amount })}</td>
-                <td className="text-right text-sm py-1 text-white">{quote.includes('USD') ? formatCrypto(bid[1], { minimumFractionDigits: precision.amount }) : formatFiat(bid[1], { minimumFractionDigits: precision.amount })}</td>
-                <td className="text-right text-sm py-1 text-white">{quote.includes('USD') ? formatFiat(bid[0] * bid[1], { minimumFractionDigits: 2 }) : formatCrypto(bid[0] * bid[1], { minimumFractionDigits: 2 })}</td>
+                <td className={`text-left text-sm py-1 text-green-400`}>
+                  {quote.includes('USD')
+                    ? formatFiat(bid[0], { minimumFractionDigits: precision.price })
+                    : formatCrypto(bid[0], { minimumFractionDigits: precision.amount })}
+                </td>
+                <td className="text-right text-sm py-1 text-white">
+                  {quote.includes('USD')
+                    ? formatCrypto(bid[1], { minimumFractionDigits: precision.amount })
+                    : formatFiat(bid[1], { minimumFractionDigits: precision.amount })}
+                </td>
+                <td className="text-right text-sm py-1 text-white">
+                  {quote.includes('USD')
+                    ? formatFiat(bid[0] * bid[1], { minimumFractionDigits: 2 })
+                    : formatCrypto(bid[0] * bid[1], { minimumFractionDigits: 2 })}
+                </td>
               </tr>
             ))}
           </tbody>

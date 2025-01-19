@@ -1,10 +1,15 @@
 import React, { createContext, useReducer, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MarketTicker, MarketTrade, OrderBook, WebSocketMessage } from '@project-aria/shared';
 
-const WEBSOCKET_URL = (import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:4001').replace(/^http/, 'ws');
+const WEBSOCKET_URL = (import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:4001').replace(
+  /^http/,
+  'ws'
+);
 
 if (!import.meta.env.VITE_WEBSOCKET_URL) {
-  console.warn('VITE_WEBSOCKET_URL not set in environment variables, using default: ws://localhost:4001');
+  console.warn(
+    'VITE_WEBSOCKET_URL not set in environment variables, using default: ws://localhost:4001'
+  );
 }
 
 interface DecimalPrecision {
@@ -45,10 +50,14 @@ function getDecimalPlaces(value: string | number): number {
   return decimalIndex === -1 ? 0 : str.length - decimalIndex - 1;
 }
 
-function updatePrecision(current: DecimalPrecision | undefined, price: string | number, amount: string | number): DecimalPrecision {
+function updatePrecision(
+  current: DecimalPrecision | undefined,
+  price: string | number,
+  amount: string | number
+): DecimalPrecision {
   const priceDecimals = getDecimalPlaces(price);
   const amountDecimals = getDecimalPlaces(amount);
-  
+
   if (!current) {
     return { price: priceDecimals, amount: amountDecimals };
   }
@@ -89,7 +98,7 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
     case 'SET_TRADE': {
       const currentTrades = state.trades[action.payload.symbol] || [];
       const newTrades = [action.payload, ...currentTrades].slice(0, 20);
-      
+
       const newPrecision = updatePrecision(
         state.decimalPrecision[action.payload.symbol],
         action.payload.price,
@@ -159,10 +168,13 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     decimalPrecision: state.decimalPrecision,
   };
 
-  const errorState = useMemo(() => ({
-    error: state.error,
-    isConnected: state.isConnected,
-  }), [state.error, state.isConnected]);
+  const errorState = useMemo(
+    () => ({
+      error: state.error,
+      isConnected: state.isConnected,
+    }),
+    [state.error, state.isConnected]
+  );
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -194,23 +206,26 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     const ws = new WebSocket(WEBSOCKET_URL);
 
     ws.onopen = () => {
-      console.log('Connected to WebSocket server');
+      console.warn('Connected to WebSocket server');
       dispatch({ type: 'SET_CONNECTED', payload: true });
       reconnectAttempts.current = 0;
 
       // Resubscribe to pending subscriptions after a short delay
       setTimeout(() => {
         if (pendingSubscriptions.current.size > 0) {
-          console.log('Resubscribing to pending symbols:', Array.from(pendingSubscriptions.current));
+          console.warn(
+            'Resubscribing to pending symbols:',
+            Array.from(pendingSubscriptions.current)
+          );
           pendingSubscriptions.current.forEach(symbol => {
             ws.send(JSON.stringify({ type: 'subscribe', symbol }));
           });
         }
-      }, 2000);
+      }, 100);
     };
 
     ws.onclose = () => {
-      console.log('Disconnected from WebSocket server');
+      console.warn('Disconnected from WebSocket server');
       dispatch({ type: 'SET_CONNECTED', payload: false });
 
       // Exponential backoff with jitter for reconnection
@@ -218,12 +233,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       const maxDelay = 30000;
       const jitter = Math.random() * 1000;
       const delay = Math.min(baseDelay * Math.pow(2, reconnectAttempts.current) + jitter, maxDelay);
-      
+
       reconnectAttempts.current++;
       reconnectTimeoutRef.current = window.setTimeout(connect, delay);
     };
 
-    ws.onerror = (error) => {
+    ws.onerror = error => {
       console.error('WebSocket error:', error);
       dispatch({ type: 'SET_ERROR', payload: 'WebSocket connection error' });
     };
@@ -236,12 +251,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const handleSubscribe = useCallback((symbol: string) => {
     if (!symbol) return;
     const formattedSymbol = symbol.replace('_', '').toUpperCase();
-    
+
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.log('Socket not connected, adding to pending subscriptions:', formattedSymbol);
+      console.warn('Socket not connected, adding to pending subscriptions:', formattedSymbol);
       pendingSubscriptions.current.add(formattedSymbol);
     } else {
-      console.log('Subscribing to:', formattedSymbol);
+      console.warn('Subscribing to:', formattedSymbol);
       wsRef.current.send(JSON.stringify({ type: 'subscribe', symbol: formattedSymbol }));
     }
   }, []);
@@ -249,9 +264,9 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const handleUnsubscribe = useCallback((symbol: string) => {
     if (!symbol) return;
     const formattedSymbol = symbol.replace('_', '').toUpperCase();
-    
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('Unsubscribing from:', formattedSymbol);
+      console.warn('Unsubscribing from:', formattedSymbol);
       wsRef.current.send(JSON.stringify({ type: 'unsubscribe', symbol: formattedSymbol }));
     }
     pendingSubscriptions.current.delete(formattedSymbol);
@@ -265,24 +280,32 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     connect();
 
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+    const cleanup = () => {
+      const pendingSubs = pendingSubscriptions.current;
+      const ws = wsRef.current;
+      const timeout = reconnectTimeoutRef.current;
+
+      if (timeout) {
+        clearTimeout(timeout);
       }
-      if (wsRef.current) {
-        wsRef.current.close();
+      if (ws) {
+        ws.close();
         wsRef.current = null;
       }
-      pendingSubscriptions.current.clear();
+
+      if (pendingSubs.size > 0) {
+        console.warn('Clearing pending subscriptions:', Array.from(pendingSubs));
+        pendingSubs.clear();
+      }
     };
+
+    return cleanup;
   }, [connect]);
 
   return (
     <MarketErrorContext.Provider value={errorState}>
       <MarketActionsContext.Provider value={marketActions}>
-        <MarketDataContext.Provider value={marketData}>
-          {children}
-        </MarketDataContext.Provider>
+        <MarketDataContext.Provider value={marketData}>{children}</MarketDataContext.Provider>
       </MarketActionsContext.Provider>
     </MarketErrorContext.Provider>
   );

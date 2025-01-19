@@ -12,11 +12,6 @@ export default function Dashboard() {
     setActiveSymbol(symbol);
   }, []);
 
-  console.log('[DASHBOARD] Initialised', {
-    error,
-    isConnected,
-  });
-
   return (
     <div className="min-h-screen bg-secondary">
       <div className="container mx-auto px-4 py-8 space-y-2">
@@ -25,7 +20,7 @@ export default function Dashboard() {
             Connecting to market data service...
           </div>
         )}
-        
+
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
             {error}

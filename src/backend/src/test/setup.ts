@@ -11,11 +11,11 @@ process.env.FRONTEND_URL = 'http://localhost:3000';
 
 // Mock Winston logger
 jest.mock('../utils/logger', () => ({
-    __esModule: true,
-    default: {
-        info: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn()
-    }
+  __esModule: true,
+  default: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
 }));

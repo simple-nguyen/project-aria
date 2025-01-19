@@ -12,8 +12,9 @@
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "npm run dev -w src/frontend",
     "dev:backend": "npm run dev -w src/backend",
+    "dev:docker": "docker compose down -v && docker compose build --no-cache && docker compose up",
     "build": "npm run build -ws",
-    "start": "npm run start -w src/backend",
+    "start:backend": "npm run start -w src/backend",
     "test": "npm run test -ws"
   },
   "devDependencies": {

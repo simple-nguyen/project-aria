@@ -35,7 +35,9 @@ function Ticker({ symbol }: TickerProps) {
           <div className="text-2xl font-bold text-white">{symbol.replace('_', '/')}</div>
           <div className="flex items-center ml-5">
             <span className="text-xl font-semibold text-white top-[2px] relative">
-              {quote.includes('USD') ? formatFiat(ticker.lastPrice, { minimumFractionDigits: precision.price }) : formatCrypto(ticker.lastPrice, { minimumFractionDigits: precision.price })}
+              {quote.includes('USD')
+                ? formatFiat(ticker.lastPrice, { minimumFractionDigits: precision.price })
+                : formatCrypto(ticker.lastPrice, { minimumFractionDigits: precision.price })}
             </span>
           </div>
         </div>
@@ -48,20 +50,35 @@ function Ticker({ symbol }: TickerProps) {
           </div>
           <div>
             <p className="text-gray-600">24h High</p>
-            <p className="font-medium text-white">{quote.includes('USD') ? formatFiat(ticker.highPrice, { minimumFractionDigits: precision.price }) : formatCrypto(ticker.highPrice, { minimumFractionDigits: precision.price })}</p>
+            <p className="font-medium text-white">
+              {quote.includes('USD')
+                ? formatFiat(ticker.highPrice, { minimumFractionDigits: precision.price })
+                : formatCrypto(ticker.highPrice, { minimumFractionDigits: precision.price })}
+            </p>
           </div>
           <div>
             <p className="text-gray-600">24h Low</p>
-            <p className="font-medium text-white">{quote.includes('USD') ? formatFiat(ticker.lowPrice, { minimumFractionDigits: precision.price }) : formatCrypto(ticker.lowPrice, { minimumFractionDigits: precision.price })}</p>
+            <p className="font-medium text-white">
+              {quote.includes('USD')
+                ? formatFiat(ticker.lowPrice, { minimumFractionDigits: precision.price })
+                : formatCrypto(ticker.lowPrice, { minimumFractionDigits: precision.price })}
+            </p>
           </div>
           <div>
             <p className="text-gray-600">{`24h Volume (${base})`}</p>
-            <p className="font-medium text-white">{base.includes('USD') ? formatFiat(ticker.volume, { minimumFractionDigits: precision.amount }) : formatCrypto(ticker.volume, { minimumFractionDigits: precision.amount })}</p>
+            <p className="font-medium text-white">
+              {base.includes('USD')
+                ? formatFiat(ticker.volume, { minimumFractionDigits: precision.amount })
+                : formatCrypto(ticker.volume, { minimumFractionDigits: precision.amount })}
+            </p>
           </div>
           <div>
             <p className="text-gray-600">{`24h Volume (${quote})`}</p>
             <p className={`font-medium ${isPriceUp ? 'text-green-400' : 'text-red-400'}`}>
-              ${quote.includes('USD') ? formatFiat(ticker.quoteVolume) : formatCrypto(ticker.quoteVolume)}
+              $
+              {quote.includes('USD')
+                ? formatFiat(ticker.quoteVolume)
+                : formatCrypto(ticker.quoteVolume)}
             </p>
           </div>
         </div>

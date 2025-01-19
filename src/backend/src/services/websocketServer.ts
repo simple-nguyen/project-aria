@@ -1,26 +1,24 @@
-import { Server } from 'http';
-import { WebSocket, WebSocketServer as WSServer } from 'ws';
+import { WebSocketServer as WSServer, WebSocket } from 'ws';
+import { BinanceService, createBinanceService } from './binanceService';
 import { MarketTicker, MarketTrade, OrderBook, WebSocketMessage } from '@project-aria/shared';
-import { BinanceService } from './binanceService';
 import logger from '../utils/logger';
-import { AppError, ErrorCodes } from '../utils/errors';
 import { streams } from '../utils/stream';
+import { AppError } from '../utils/errors';
 
 export class WebSocketServer {
   private wss: WSServer;
+  private binanceService: BinanceService;
   private subscriptions: Map<string, Set<WebSocket>> = new Map();
   private clientSubscriptions: Map<WebSocket, Set<string>> = new Map();
-  private binanceService: BinanceService;
 
-  constructor(server: Server) {
-    this.wss = new WSServer({ server });
-    this.binanceService = new BinanceService();
-    this.binanceService.connect();
-    this.setupWebSocketServer();
+  constructor(wss: WSServer) {
+    this.wss = wss;
+    this.binanceService = createBinanceService();
     this.setupBinanceHandlers();
+    this.setupWebSocketHandlers();
   }
 
-  private setupWebSocketServer() {
+  private setupWebSocketHandlers() {
     this.wss.on('connection', (ws: WebSocket) => {
       logger.info('Client connected');
 
@@ -29,7 +27,22 @@ export class WebSocketServer {
       ws.on('message', (data: Buffer) => {
         try {
           const message = JSON.parse(data.toString());
-          this.handleMessage(ws, message);
+
+          if (!message.type || !message.symbol) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+            return;
+          }
+
+          switch (message.type) {
+            case 'subscribe':
+              this.subscribe(ws, message.symbol);
+              break;
+            case 'unsubscribe':
+              this.unsubscribe(ws, message.symbol);
+              break;
+            default:
+              ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
+          }
         } catch (error) {
           logger.error('Error parsing message:', error);
           ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
@@ -37,61 +50,49 @@ export class WebSocketServer {
       });
 
       ws.on('close', () => {
+        this.handleDisconnect(ws);
         logger.info('Client disconnected');
-        this.handleClientDisconnect(ws);
       });
 
-      ws.on('error', (error) => {
-        logger.error('WebSocket error:', error);
-        this.handleClientDisconnect(ws);
+      ws.on('error', error => {
+        logger.error('WebSocket error:', { error: error.message });
       });
     });
   }
 
   private setupBinanceHandlers() {
+    this.binanceService.connect();
+
     this.binanceService.on('trade', (trade: MarketTrade) => {
       this.broadcastToSymbol(trade.symbol, { type: 'trade', data: trade });
     });
 
-    this.binanceService.on('depth', (orderBook: OrderBook) => {
-      this.broadcastToSymbol(orderBook.symbol, { type: 'depth20', data: orderBook });
+    this.binanceService.on('depth', (depth: OrderBook) => {
+      this.broadcastToSymbol(depth.symbol, { type: 'depth20', data: depth });
     });
 
     this.binanceService.on('ticker', (ticker: MarketTicker) => {
       this.broadcastToSymbol(ticker.symbol, { type: 'ticker', data: ticker });
     });
 
-    this.binanceService.on('error', (error: Error) => {
-      logger.error('Binance service error', {
+    this.binanceService.on('error', (error: AppError) => {
+      logger.error('Binance service error:', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        code: error instanceof AppError ? error.code : 'UNKNOWN_ERROR'
+        code: error.code,
       });
-      this.broadcastToAll({ 
-        type: 'error', 
+      this.broadcastToAll({
+        type: 'error',
         data: {
           message: 'Market data service error',
-          code: error instanceof AppError ? error.code : ErrorCodes.WEBSOCKET_CONNECTION_FAILED
-        }
+          code: error.code,
+        },
       });
     });
   }
 
-  private handleMessage(client: WebSocket, message: any) {
-    switch (message.type) {
-      case 'subscribe':
-        this.handleSubscribe(client, message.symbol);
-        break;
-      case 'unsubscribe':
-        this.handleUnsubscribe(client, message.symbol);
-        break;
-      default:
-        client.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
-    }
-  }
-
-  private handleSubscribe(client: WebSocket, symbol: string) {
+  private subscribe(client: WebSocket, symbol: string) {
     if (!symbol) {
-      client.send(JSON.stringify({ type: 'error', message: 'Symbol is required' }));
+      client.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
       return;
     }
 
@@ -104,7 +105,7 @@ export class WebSocketServer {
     logger.info(`Client subscribed to ${symbol}`);
   }
 
-  private handleUnsubscribe(client: WebSocket, symbol: string) {
+  private unsubscribe(client: WebSocket, symbol: string) {
     if (!symbol) return;
 
     this.subscriptions.get(symbol)?.delete(client);
@@ -116,7 +117,7 @@ export class WebSocketServer {
     logger.info(`Client unsubscribed from ${symbol}`);
   }
 
-  private handleClientDisconnect(client: WebSocket) {
+  private handleDisconnect(client: WebSocket) {
     const clientSubs = this.clientSubscriptions.get(client);
     if (clientSubs) {
       for (const symbol of clientSubs) {
@@ -140,7 +141,6 @@ export class WebSocketServer {
         client.send(messageStr);
       }
     }
-    logger.debug('Broadcasting market data', { type: message.type, symbol });
   }
 
   private broadcastToAll(message: WebSocketMessage) {
@@ -150,7 +150,6 @@ export class WebSocketServer {
         client.send(messageStr);
       }
     });
-    logger.debug('Broadcasting to all clients', { type: message.type });
   }
 
   public close() {
@@ -159,6 +158,6 @@ export class WebSocketServer {
   }
 }
 
-export const createWebSocketServer = (server: Server): WebSocketServer => {
-  return new WebSocketServer(server);
-};
+export function createWebSocketServer(wss: WSServer): WebSocketServer {
+  return new WebSocketServer(wss);
+}

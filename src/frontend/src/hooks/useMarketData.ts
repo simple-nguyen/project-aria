@@ -1,5 +1,9 @@
 import { useContext } from 'react';
-import { MarketDataContext, MarketErrorContext, MarketActionsContext } from '../context/MarketContext';
+import {
+  MarketDataContext,
+  MarketErrorContext,
+  MarketActionsContext,
+} from '../context/MarketContext';
 import { MarketTicker, OrderBook, MarketTrade } from '@project-aria/shared';
 import { useDeepCompareMemo } from 'use-deep-compare';
 
@@ -8,7 +12,7 @@ interface DecimalPrecision {
   amount: number;
 }
 
-function useMarketData() {
+export function useMarketData() {
   const context = useContext(MarketDataContext);
   if (!context) {
     throw new Error('useMarketData must be used within a MarketProvider');
@@ -20,12 +24,12 @@ export function useMarketTicker(symbol: string): MarketTicker | undefined {
   const { tickers } = useMarketData();
   const processedSymbol = symbol.replace('_', '');
   const ticker = tickers[processedSymbol];
-  
+
   return useDeepCompareMemo(() => {
     if (!ticker || typeof ticker.lastPrice !== 'string') {
       return undefined;
     }
-    
+
     return {
       symbol: ticker.symbol,
       lastPrice: ticker.lastPrice,
@@ -44,12 +48,12 @@ export function useMarketOrderBook(symbol: string): OrderBook | undefined {
   const { orderBooks } = useMarketData();
   const processedSymbol = symbol.replace('_', '');
   const orderBook = orderBooks[processedSymbol];
-  
+
   return useDeepCompareMemo(() => {
     if (!orderBook || !Array.isArray(orderBook.asks) || !Array.isArray(orderBook.bids)) {
       return undefined;
     }
-    
+
     return {
       symbol: orderBook.symbol,
       asks: [...orderBook.asks],
@@ -62,19 +66,19 @@ export function useMarketTrades(symbol: string): MarketTrade[] {
   const { trades } = useMarketData();
   const processedSymbol = symbol.replace('_', '');
   const symbolTrades = trades[processedSymbol];
-  
+
   return useDeepCompareMemo(() => {
     if (!Array.isArray(symbolTrades)) {
       return [];
     }
-    
+
     return symbolTrades.map(trade => ({
       symbol: trade.symbol,
       price: trade.price,
       quantity: trade.quantity,
       timestamp: trade.timestamp,
       tradeId: trade.tradeId,
-      isBuyerMaker: trade.isBuyerMaker
+      isBuyerMaker: trade.isBuyerMaker,
     }));
   }, [symbolTrades]);
 }

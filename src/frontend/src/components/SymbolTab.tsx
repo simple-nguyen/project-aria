@@ -17,9 +17,10 @@ function SymbolTab({ symbol, isActive, onClick }: SymbolTabProps) {
       onClick={onClick}
       className={`
         whitespace-nowrap p-4 border-4 rounded-lg font-medium text-sm
-        ${isActive
-          ? 'border-yellow-500 text-yellow-600 bg-[rgba(255,255,50,0.1)]'
-          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        ${
+          isActive
+            ? 'border-yellow-500 text-yellow-600 bg-[rgba(255,255,50,0.1)]'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
         }
       `}
     >

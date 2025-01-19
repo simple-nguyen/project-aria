@@ -10,10 +10,14 @@ services:
     volumes:
       - ./src/frontend:/app/src/frontend
       - ./src/shared:/app/src/shared
+      - /app/src/frontend/node_modules
+      - /app/src/shared/node_modules
     environment:
       - NODE_ENV=development
+      - VITE_WEBSOCKET_URL=ws://localhost:4001
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   backend:
     build:
@@ -25,5 +29,14 @@ services:
     volumes:
       - ./src/backend:/app/src/backend
       - ./src/shared:/app/src/shared
+      - /app/src/backend/node_modules
+      - /app/src/shared/node_modules
     environment:
       - NODE_ENV=development
+      - PORT=4000
+      - WS_PORT=4001
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

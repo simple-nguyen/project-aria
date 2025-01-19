@@ -21,9 +21,10 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const container = containerRef.current;
     const updateDimensions = () => {
-      if (containerRef.current) {
-        const width = containerRef.current.clientWidth;
+      if (container) {
+        const width = container.clientWidth;
         const height = Math.max(200, width / aspectRatio);
         setDimensions({ width, height });
       }
@@ -32,12 +33,10 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
     updateDimensions();
 
     const resizeObserver = new ResizeObserver(updateDimensions);
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
 
     return () => {
-      if (containerRef.current) {
-        resizeObserver.unobserve(containerRef.current);
-      }
+      resizeObserver.unobserve(container);
     };
   }, [aspectRatio]);
 
@@ -45,13 +44,19 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
   const chartHeight = dimensions.height - MARGIN.top - MARGIN.bottom;
 
   const { currentPrice, bids, asks, bounds, maxTotal } = useMemo(() => {
-    if (!orderbook || !orderbook.asks || !orderbook.bids || orderbook.asks.length === 0 || orderbook.bids.length === 0) {
+    if (
+      !orderbook ||
+      !orderbook.asks ||
+      !orderbook.bids ||
+      orderbook.asks.length === 0 ||
+      orderbook.bids.length === 0
+    ) {
       return {
         currentPrice: 0,
         bids: [],
         asks: [],
         bounds: { lower: 0, upper: 0 },
-        maxTotal: 0
+        maxTotal: 0,
       };
     }
 
@@ -66,22 +71,19 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
       asks: orderbook.asks,
       bounds: {
         lower: minPrice - padding,
-        upper: maxPrice + padding
+        upper: maxPrice + padding,
       },
-      maxTotal: [...orderbook.bids, ...orderbook.asks].reduce((acc, d) => Math.max(acc, d[2]), 0) * 1.1
+      maxTotal:
+        [...orderbook.bids, ...orderbook.asks].reduce((acc, d) => Math.max(acc, d[2]), 0) * 1.1,
     };
   }, [orderbook]);
 
   useEffect(() => {
     if (!svgRef.current || !currentPrice || maxTotal === 0 || dimensions.width === 0) return;
 
-    const xScale = d3.scaleLinear()
-      .domain([bounds.lower, bounds.upper])
-      .range([0, chartWidth]);
+    const xScale = d3.scaleLinear().domain([bounds.lower, bounds.upper]).range([0, chartWidth]);
 
-    const yScale = d3.scaleLinear()
-      .domain([0, maxTotal])
-      .range([chartHeight, 0]);
+    const yScale = d3.scaleLinear().domain([0, maxTotal]).range([chartHeight, 0]);
 
     // Setup SVG with static elements
     const svg = d3.select(svgRef.current);
@@ -94,37 +96,30 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
       .attr('transform', `translate(${MARGIN.left},${MARGIN.top})`);
 
     // Add static elements
-    g.append('g')
-      .attr('transform', `translate(0,${chartHeight})`)
-      .call(d3.axisBottom(xScale));
+    g.append('g').attr('transform', `translate(0,${chartHeight})`).call(d3.axisBottom(xScale));
 
-    g.append('g')
-      .call(d3.axisLeft(yScale));
+    g.append('g').call(d3.axisLeft(yScale));
 
     // Create area generators
-    const bidArea = d3.area<DepthPoint>()
+    const bidArea = d3
+      .area<DepthPoint>()
       .x(d => xScale(d[0]))
       .y0(chartHeight)
       .y1(d => yScale(d[2]))
       .curve(d3.curveStep);
 
-    const askArea = d3.area<DepthPoint>()
+    const askArea = d3
+      .area<DepthPoint>()
       .x(d => xScale(d[0]))
       .y0(chartHeight)
       .y1(d => yScale(d[2]))
       .curve(d3.curveStep);
 
     // Bid fill area
-    g.append('path')
-      .datum(bids)
-      .attr('fill', 'rgba(74, 222, 128, 1)')
-      .attr('d', bidArea);
+    g.append('path').datum(bids).attr('fill', 'rgba(74, 222, 128, 1)').attr('d', bidArea);
 
     // Ask fill area
-    g.append('path')
-      .datum(asks)
-      .attr('fill', 'rgba(248, 113, 113, 1)')
-      .attr('d', askArea);
+    g.append('path').datum(asks).attr('fill', 'rgba(248, 113, 113, 1)').attr('d', askArea);
 
     // Price line
     g.append('line')
@@ -143,19 +138,39 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
       .text(currentPrice.toFixed(2));
 
     g.selectAll('text').style('fill', 'white');
-    g.selectAll('.domain, line').style("stroke", "white");
-
+    g.selectAll('.domain, line').style('stroke', 'white');
   }, [orderbook, dimensions, chartWidth, chartHeight, currentPrice, bounds, maxTotal, bids, asks]);
 
+  if (
+    !orderbook ||
+    !orderbook.asks ||
+    !orderbook.bids ||
+    orderbook.asks.length === 0 ||
+    orderbook.bids.length === 0
+  ) {
+    return (
+      <div
+        data-testid="order-book-chart"
+        className="bg-primary rounded-lg p-4 w-full flex items-center justify-center"
+      >
+        <p className="text-white">Loading order book...</p>
+      </div>
+    );
+  }
+
   return (
-    <div ref={containerRef} className="bg-primary rounded-lg p-4 w-full">
-      <svg 
-        ref={svgRef} 
-        style={{ 
+    <div
+      ref={containerRef}
+      className="bg-primary rounded-lg p-4 w-full"
+      data-testid="order-book-chart"
+    >
+      <svg
+        ref={svgRef}
+        style={{
           width: '100%',
           height: dimensions.height,
           maxWidth: '100%',
-        }} 
+        }}
       />
     </div>
   );
