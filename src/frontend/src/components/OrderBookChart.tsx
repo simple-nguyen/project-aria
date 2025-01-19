@@ -11,11 +11,13 @@ type DepthPoint = [number, number, number]; // price, size, total
 
 const MARGIN = { top: 20, right: 30, bottom: 40, left: 40 };
 const DEFAULT_ASPECT_RATIO = 2.5;
+const DEFAULT_WIDTH = 1500; // Default container width
+const DEFAULT_HEIGHT = Math.max(200, DEFAULT_WIDTH / DEFAULT_ASPECT_RATIO);
 
 function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBookChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [dimensions, setDimensions] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
   const orderbook = useMarketOrderBook(symbol);
 
   useEffect(() => {
@@ -32,7 +34,9 @@ function OrderBookChart({ symbol, aspectRatio = DEFAULT_ASPECT_RATIO }: OrderBoo
 
     updateDimensions();
 
-    const resizeObserver = new ResizeObserver(updateDimensions);
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateDimensions);
+    });
     resizeObserver.observe(container);
 
     return () => {
