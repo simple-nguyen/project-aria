@@ -23,6 +23,7 @@ The project was built using the following tools:
 - Current assessment of AI is at a junior or early mid-level engineer. Requires more intervention when tasks approach optimisation and without losing context (making unnecessary/destructive changes)
 - Removed bloat by refactoring to use more native and lightweight implementations such as websocket (native) and ws libraries
 - Memoization is key in reducing re-rendering for components especially given updates were frequent with the data coming from the Websockets
+- Total time spent on this project: 12 hours
 
 ## Improvements
 - Store and retrieve available symbols from the source / database (eg. Binance APIs) to ensure we get the correct set of data that is available
