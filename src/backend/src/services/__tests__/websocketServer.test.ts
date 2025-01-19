@@ -91,7 +91,6 @@ describe('WebSocketServer', () => {
 
   describe('client connections', () => {
     beforeEach(() => {
-      // Simulate client connection
       wsHandlers.connection(mockWebSocket);
     });
 
@@ -153,14 +152,12 @@ describe('WebSocketServer', () => {
     });
 
     it('should handle client unsubscriptions', () => {
-      // First subscribe
       const subscribeMessage = JSON.stringify({
         type: 'subscribe',
         symbol: 'BTCUSDT',
       });
       wsHandlers.message(Buffer.from(subscribeMessage));
 
-      // Then unsubscribe
       const unsubscribeMessage = JSON.stringify({
         type: 'unsubscribe',
         symbol: 'BTCUSDT',
@@ -172,15 +169,13 @@ describe('WebSocketServer', () => {
     });
 
     it('should handle client disconnections', () => {
-      // First subscribe to something
       const subscribeMessage = JSON.stringify({
         type: 'subscribe',
         symbol: 'BTCUSDT',
       });
       wsHandlers.message(Buffer.from(subscribeMessage));
 
-      // Then disconnect
-      wsHandlers.close();
+      wsHandlers.close('Normal disconnect');
 
       expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith('BTCUSDT', streams);
       expect(logger.info).toHaveBeenCalledWith('Client disconnected');
@@ -217,7 +212,6 @@ describe('WebSocketServer', () => {
     });
 
     it('should cleanup subscriptions on client disconnect', () => {
-      // Subscribe to multiple symbols
       const symbols = ['BTCUSDT', 'ETHUSDT'];
       symbols.forEach(symbol => {
         const subscribeMessage = JSON.stringify({
@@ -227,10 +221,8 @@ describe('WebSocketServer', () => {
         wsHandlers.message(Buffer.from(subscribeMessage));
       });
 
-      // Simulate disconnect
-      wsHandlers.close();
+      wsHandlers.close('Disconnet');
 
-      // Should unsubscribe from all symbols
       symbols.forEach(symbol => {
         expect(mockBinanceService.unsubscribe).toHaveBeenCalledWith(symbol, streams);
       });
@@ -239,7 +231,6 @@ describe('WebSocketServer', () => {
 
   describe('market data broadcasting', () => {
     beforeEach(() => {
-      // Simulate client connection and subscription
       wsHandlers.connection(mockWebSocket);
       const subscribeMessage = JSON.stringify({
         type: 'subscribe',

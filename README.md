@@ -62,6 +62,7 @@ project-aria/
 - Frontend development server: `npm run dev:frontend`
 - Backend development server: `npm run dev:backend`
 - Run both simultaneously: `npm run dev`
+- Run using docker: `npm run dev:docker`
 
 ## Building for Production
 
